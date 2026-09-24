@@ -1,7 +1,9 @@
 // --- DATABASE USER (UNTUK AUTHENTICATION) ---
+// --- DATABASE USER (PEMBARUAN AKUN LOGIN) ---
 const dummyUsers = [
-  { username: 'admin', password: 'admin123', name: 'Administrator', role: 'Administrator' },
-  { username: 'budi', password: '12345', name: 'Budi Santoso', role: 'Karyawan (IT)' }
+  { username: 'bendahara', password: 'bendahara123', name: 'Susanti', role: 'Bendahara Koperasi' },
+  { username: 'pengurus', password: 'pengurus123', name: 'Ivan Sihite', role: 'Pengurus Koperasi' },
+  { username: 'karyawan', password: 'karyawan123', name: 'Frans Dowell', role: 'Karyawan / Anggota' }
 ];
 
 // --- DATA INITIAL (SAMPLE DATA) ---
