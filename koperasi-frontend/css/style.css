@@ -384,3 +384,24 @@ input:focus, select:focus {
 .mt-10 { margin-top: 10px; }
 .mt-20 { margin-top: 20px; }
 .mb-10 { margin-bottom: 10px; }
+
+/* ================= RESPONSIVE UNTUK HP ================= */
+@media (max-width: 768px) {
+  .app-layout {
+    flex-direction: column; /* Ubah layout dari samping ke atas-bawah */
+  }
+
+  .sidebar {
+    width: 100%; /* Sidebar menyesuaikan lebar HP */
+    min-height: auto;
+  }
+
+  .layout-split {
+    grid-template-columns: 1fr; /* Form dan tabel disusun menumpuk */
+  }
+
+  .login-card {
+    padding: 24px;
+    margin: 10px;
+  }
+}
