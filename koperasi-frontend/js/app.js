@@ -1,54 +1,12 @@
-// --- DATABASE USER (UNTUK AUTHENTICATION) ---
-// --- DATABASE USER (PEMBARUAN AKUN LOGIN) ---
-const dummyUsers = [
-  { username: 'bendahara', password: 'bendahara123', name: 'Susanti', role: 'Bendahara Koperasi' },
-  { username: 'pengurus', password: 'pengurus123', name: 'Ivan Sihite', role: 'Pengurus Koperasi' },
-  { username: 'karyawan', password: 'karyawan123', name: 'Frans Dowell', role: 'Karyawan / Anggota' }
-];
-
-// --- DATA INITIAL (SAMPLE DATA) ---
-const initialMembers = [
-  { id: 'KOP-001', nama: 'Budi Santoso', dept: 'IT Support', gajiPokok: 8500000 },
-  { id: 'KOP-002', nama: 'Siti Rahma', dept: 'Human Resources', gajiPokok: 7800000 },
-  { id: 'KOP-003', nama: 'Dewi Lestari', dept: 'Finance', gajiPokok: 9200000 }
-];
-
-const initialSavings = [
-  { memberId: 'KOP-001', pokok: 500000, wajib: 300000, sukarela: 200000 },
-  { memberId: 'KOP-002', pokok: 500000, wajib: 200000, sukarela: 50000 },
-  { memberId: 'KOP-003', pokok: 500000, wajib: 400000, sukarela: 150000 }
-];
-
-const initialLoans = [];
-const initialPayrolls = [];
+// --- KONFIGURASI API BACKEND ---
+const API_BASE_URL = 'https://koperasikaryawan-git-main-frans-dowell.vercel.app';
 
 // --- UTILS FORMATTER ---
 function formatRupiah(num) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num || 0);
 }
 
-// --- LOCALSTORAGE STORAGE HANDLER ---
-function loadData(key, defaultData) {
-  const data = localStorage.getItem(key);
-  if (!data) {
-    localStorage.setItem(key, JSON.stringify(defaultData));
-    return defaultData;
-  }
-  return JSON.parse(data);
-}
-
-function saveData(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
-}
-
-// Global Variables Data
-let dbMembers = loadData('db_members', initialMembers);
-let dbSavings = loadData('db_savings', initialSavings);
-let dbLoans = loadData('db_loans', initialLoans);
-let dbPayrolls = loadData('db_payrolls', initialPayrolls);
-
-// --- FITUR LOGIN & AUTHENTICATION ---
-
+// --- AUTHENTICATION HANDLER ---
 function checkAuth() {
   const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
   const loginScreen = document.getElementById('login-screen');
@@ -70,23 +28,35 @@ function checkAuth() {
   }
 }
 
-// Handle Form Submit Login
-document.getElementById('form-login').addEventListener('submit', function(e) {
+// Form Submit Login (Post to Express API)
+document.getElementById('form-login').addEventListener('submit', async function(e) {
   e.preventDefault();
   const usernameInput = document.getElementById('username').value.trim();
   const passwordInput = document.getElementById('password').value.trim();
   const errorMsg = document.getElementById('login-error');
 
-  const user = dummyUsers.find(u => u.username === usernameInput && u.password === passwordInput);
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: usernameInput, password: passwordInput })
+    });
 
-  if (user) {
-    errorMsg.style.display = 'none';
-    localStorage.setItem('logged_user', JSON.stringify(user));
-    document.getElementById('username').value = '';
-    document.getElementById('password').value = '';
-    checkAuth();
-  } else {
-    errorMsg.style.display = 'block';
+    const result = await response.json();
+
+    if (response.ok) {
+      errorMsg.style.display = 'none';
+      localStorage.setItem('logged_user', JSON.stringify(result.user));
+      localStorage.setItem('token', result.token);
+      document.getElementById('username').value = '';
+      document.getElementById('password').value = '';
+      checkAuth();
+    } else {
+      errorMsg.innerText = result.message || 'Login gagal';
+      errorMsg.style.display = 'block';
+    }
+  } catch (error) {
+    alert('Tidak dapat terhubung ke server backend! Pastikan server Express berjalan.');
   }
 });
 
@@ -94,15 +64,8 @@ document.getElementById('form-login').addEventListener('submit', function(e) {
 function handleLogout() {
   if (confirm('Apakah Anda yakin ingin keluar dari aplikasi?')) {
     localStorage.removeItem('logged_user');
+    localStorage.removeItem('token');
     checkAuth();
-  }
-}
-
-// Reset Data Ke Default Sample
-function resetDatabase() {
-  if (confirm('Apakah Anda yakin ingin mereset seluruh data aplikasi ke awal?')) {
-    localStorage.clear();
-    location.reload();
   }
 }
 
@@ -117,125 +80,167 @@ function switchTab(tabId, btnElement) {
   renderAll();
 }
 
-// --- RENDER FUNCTIONS ---
-function renderDashboard() {
-  let totalSavings = dbSavings.reduce((sum, item) => sum + item.pokok + item.wajib + item.sukarela, 0);
-  let totalLoans = dbLoans.reduce((sum, item) => sum + (item.status === 'APPROVED' ? item.remaining : 0), 0);
+// --- RENDER FUNCTIONS (FETCH FROM API) ---
 
-  document.getElementById('dash-total-savings').innerText = formatRupiah(totalSavings);
-  document.getElementById('dash-total-loans').innerText = formatRupiah(totalLoans);
-  document.getElementById('dash-total-members').innerText = `${dbMembers.length} Karyawan`;
+async function renderDashboard() {
+  try {
+    // 1. Fetch Ringkasan Dashboard
+    const resSummary = await fetch(`${API_BASE_URL}/dashboard/summary`);
+    const summary = await resSummary.json();
 
-  const tbody = document.getElementById('member-list-tbody');
-  tbody.innerHTML = '';
-  dbMembers.forEach(m => {
-    tbody.innerHTML += `
-      <tr>
-        <td><strong>${m.id}</strong></td>
-        <td>${m.nama}</td>
-        <td>${m.dept}</td>
-        <td>${formatRupiah(m.gajiPokok)}</td>
-      </tr>
-    `;
-  });
+    document.getElementById('dash-total-savings').innerText = formatRupiah(summary.totalSavings);
+    document.getElementById('dash-total-loans').innerText = formatRupiah(summary.totalLoans);
+    document.getElementById('dash-total-members').innerText = `${summary.totalMembers} Karyawan`;
+
+    // 2. Fetch List Anggota
+    const resMembers = await fetch(`${API_BASE_URL}/members`);
+    const members = await resMembers.json();
+
+    const tbody = document.getElementById('member-list-tbody');
+    tbody.innerHTML = '';
+    members.forEach(m => {
+      tbody.innerHTML += `
+        <tr>
+          <td><strong>${m.id}</strong></td>
+          <td>${m.nama}</td>
+          <td>${m.dept}</td>
+          <td>${formatRupiah(m.gajiPokok)}</td>
+        </tr>
+      `;
+    });
+  } catch (err) {
+    console.error('Error rendering dashboard:', err);
+  }
 }
 
-function renderOptions() {
-  const savingsSelect = document.getElementById('savings-member-id');
-  const loanSelect = document.getElementById('loan-member-id');
+async function renderOptions() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/members`);
+    const members = await res.json();
 
-  savingsSelect.innerHTML = '';
-  loanSelect.innerHTML = '';
+    const savingsSelect = document.getElementById('savings-member-id');
+    const loanSelect = document.getElementById('loan-member-id');
 
-  dbMembers.forEach(m => {
-    savingsSelect.innerHTML += `<option value="${m.id}">${m.nama} (${m.id})</option>`;
-    loanSelect.innerHTML += `<option value="${m.id}">${m.nama} (${m.id})</option>`;
-  });
+    savingsSelect.innerHTML = '';
+    loanSelect.innerHTML = '';
+
+    members.forEach(m => {
+      savingsSelect.innerHTML += `<option value="${m.id}">${m.nama} (${m.id})</option>`;
+      loanSelect.innerHTML += `<option value="${m.id}">${m.nama} (${m.id})</option>`;
+    });
+  } catch (err) {
+    console.error('Error rendering options:', err);
+  }
 }
 
-function renderSavings() {
-  const tbody = document.getElementById('savings-tbody');
-  tbody.innerHTML = '';
+async function renderSavings() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/savings`);
+    const savings = await res.json();
 
-  dbSavings.forEach(s => {
-    const member = dbMembers.find(m => m.id === s.memberId);
-    const total = s.pokok + s.wajib + s.sukarela;
+    const tbody = document.getElementById('savings-tbody');
+    tbody.innerHTML = '';
 
-    tbody.innerHTML += `
-      <tr>
-        <td>${member ? member.nama : s.memberId}</td>
-        <td>${formatRupiah(s.pokok)}</td>
-        <td>${formatRupiah(s.wajib)}</td>
-        <td>${formatRupiah(s.sukarela)}</td>
-        <td><strong style="color: #16a34a;">${formatRupiah(total)}</strong></td>
-      </tr>
-    `;
-  });
+    savings.forEach(s => {
+      const total = s.pokok + s.wajib + s.sukarela;
+      tbody.innerHTML += `
+        <tr>
+          <td>${s.nama} (${s.memberId})</td>
+          <td>${formatRupiah(s.pokok)}</td>
+          <td>${formatRupiah(s.wajib)}</td>
+          <td>${formatRupiah(s.sukarela)}</td>
+          <td><strong style="color: #16a34a;">${formatRupiah(total)}</strong></td>
+        </tr>
+      `;
+    });
+  } catch (err) {
+    console.error('Error rendering savings:', err);
+  }
 }
 
-function renderLoans() {
-  const tbody = document.getElementById('loans-tbody');
-  tbody.innerHTML = '';
+async function renderLoans() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/loans`);
+    const loans = await res.json();
 
-  dbLoans.forEach(l => {
-    const member = dbMembers.find(m => m.id === l.memberId);
-    tbody.innerHTML += `
-      <tr>
-        <td>${member ? member.nama : l.memberId}</td>
-        <td>${formatRupiah(l.amount)}</td>
-        <td>${l.tenor} Bln</td>
-        <td>${formatRupiah(l.monthly)}</td>
-        <td>${formatRupiah(l.remaining)}</td>
-        <td><span style="color: ${l.remaining === 0 ? 'green' : 'orange'}; font-weight: 600;">
-          ${l.remaining === 0 ? 'LUNAS' : 'AKTIF'}
-        </span></td>
-      </tr>
-    `;
-  });
+    const tbody = document.getElementById('loans-tbody');
+    tbody.innerHTML = '';
+
+    loans.forEach(l => {
+      tbody.innerHTML += `
+        <tr>
+          <td>${l.nama} (${l.memberId})</td>
+          <td>${formatRupiah(l.amount)}</td>
+          <td>${l.tenor} Bln</td>
+          <td>${formatRupiah(l.monthly)}</td>
+          <td>${formatRupiah(l.remaining)}</td>
+          <td><span style="color: ${l.remaining === 0 ? 'green' : 'orange'}; font-weight: 600;">
+            ${l.remaining === 0 ? 'LUNAS' : 'AKTIF'}
+          </span></td>
+        </tr>
+      `;
+    });
+  } catch (err) {
+    console.error('Error rendering loans:', err);
+  }
 }
 
-function renderPayroll() {
-  const tbody = document.getElementById('payroll-tbody');
-  tbody.innerHTML = '';
+async function renderPayroll() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/payrolls`);
+    const payrolls = await res.json();
 
-  dbPayrolls.forEach(p => {
-    const member = dbMembers.find(m => m.id === p.memberId);
-    tbody.innerHTML += `
-      <tr>
-        <td><strong>${p.period}</strong></td>
-        <td>${member ? member.nama : p.memberId}</td>
-        <td>${formatRupiah(p.gajiPokok)}</td>
-        <td>${formatRupiah(p.potWajib)}</td>
-        <td>${formatRupiah(p.potCicilan)}</td>
-        <td><strong style="color: #dc2626;">${formatRupiah(p.totalPotongan)}</strong></td>
-        <td><strong style="color: #16a34a;">${formatRupiah(p.gajiBersih)}</strong></td>
-      </tr>
-    `;
-  });
+    const tbody = document.getElementById('payroll-tbody');
+    tbody.innerHTML = '';
+
+    payrolls.forEach(p => {
+      tbody.innerHTML += `
+        <tr>
+          <td><strong>${p.period}</strong></td>
+          <td>${p.nama} (${p.memberId})</td>
+          <td>${formatRupiah(p.gajiPokok)}</td>
+          <td>${formatRupiah(p.potWajib)}</td>
+          <td>${formatRupiah(p.potCicilan)}</td>
+          <td><strong style="color: #dc2626;">${formatRupiah(p.totalPotongan)}</strong></td>
+          <td><strong style="color: #16a34a;">${formatRupiah(p.gajiBersih)}</strong></td>
+        </tr>
+      `;
+    });
+  } catch (err) {
+    console.error('Error rendering payroll:', err);
+  }
 }
 
-// --- FORM HANDLERS ---
-document.getElementById('form-add-savings').addEventListener('submit', function(e) {
+// --- FORM HANDLERS (SEND TO API) ---
+
+// 1. Form Tambah Simpanan
+document.getElementById('form-add-savings').addEventListener('submit', async function(e) {
   e.preventDefault();
   const memberId = document.getElementById('savings-member-id').value;
   const type = document.getElementById('savings-type').value;
   const amount = Number(document.getElementById('savings-amount').value);
 
-  let saving = dbSavings.find(s => s.memberId === memberId);
-  if (!saving) {
-    saving = { memberId, pokok: 0, wajib: 0, sukarela: 0 };
-    dbSavings.push(saving);
+  try {
+    const res = await fetch(`${API_BASE_URL}/savings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberId, type, amount })
+    });
+
+    if (res.ok) {
+      alert('Setoran simpanan berhasil ditambahkan!');
+      document.getElementById('savings-amount').value = '';
+      renderSavings();
+      renderDashboard();
+    } else {
+      alert('Gagal menambahkan setoran simpanan');
+    }
+  } catch (err) {
+    alert('Terjadi kesalahan koneksi server');
   }
-
-  saving[type] += amount;
-  saveData('db_savings', dbSavings);
-
-  alert('Setoran simpanan berhasil ditambahkan!');
-  document.getElementById('savings-amount').value = '';
-  renderSavings();
-  renderDashboard();
 });
 
+// Kalkulator Estimasi Pinjaman (Client Side Preview)
 function calculateLoanPreview() {
   const amount = Number(document.getElementById('loan-amount').value) || 0;
   const tenor = Number(document.getElementById('loan-tenor').value) || 1;
@@ -251,77 +256,60 @@ function calculateLoanPreview() {
   return totalCicilan;
 }
 
-document.getElementById('form-apply-loan').addEventListener('submit', function(e) {
+// 2. Form Pengajuan Pinjaman
+document.getElementById('form-apply-loan').addEventListener('submit', async function(e) {
   e.preventDefault();
   const memberId = document.getElementById('loan-member-id').value;
   const amount = Number(document.getElementById('loan-amount').value);
   const tenor = Number(document.getElementById('loan-tenor').value);
 
-  const monthly = calculateLoanPreview();
-  const totalAmountWithInterest = monthly * tenor;
+  try {
+    const res = await fetch(`${API_BASE_URL}/loans`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberId, amount, tenor })
+    });
 
-  const newLoan = {
-    id: 'L-' + Date.now(),
-    memberId,
-    amount,
-    tenor,
-    monthly,
-    remaining: totalAmountWithInterest,
-    status: 'APPROVED'
-  };
-
-  dbLoans.push(newLoan);
-  saveData('db_loans', dbLoans);
-
-  alert('Pengajuan Pinjaman Disetujui!');
-  document.getElementById('loan-amount').value = '';
-  renderLoans();
-  renderDashboard();
+    if (res.ok) {
+      alert('Pengajuan Pinjaman Disetujui!');
+      document.getElementById('loan-amount').value = '';
+      renderLoans();
+      renderDashboard();
+    } else {
+      alert('Gagal mengajukan pinjaman');
+    }
+  } catch (err) {
+    alert('Terjadi kesalahan koneksi server');
+  }
 });
 
-function processPayrollDeduction() {
+// 3. Proses Pemotongan Gaji (Payroll Deduction)
+async function processPayrollDeduction() {
   const period = document.getElementById('payroll-period').value;
   if (!period) return alert('Pilih periode pemotongan terlebih dahulu!');
 
-  const isExist = dbPayrolls.some(p => p.period === period);
-  if (isExist && !confirm(`Periode ${period} sudah pernah diproses. Proses ulang?`)) return;
+  if (!confirm(`Proses pemotongan gaji untuk periode ${period}?`)) return;
 
-  const wajibNominal = 100000;
-
-  dbMembers.forEach(m => {
-    const loan = dbLoans.find(l => l.memberId === m.id && l.remaining > 0);
-    const potCicilan = loan ? Math.min(loan.monthly, loan.remaining) : 0;
-    const totalPotongan = wajibNominal + potCicilan;
-    const gajiBersih = m.gajiPokok - totalPotongan;
-
-    let saving = dbSavings.find(s => s.memberId === m.id);
-    if (saving) {
-      saving.wajib += wajibNominal;
-    }
-
-    if (loan) {
-      loan.remaining -= potCicilan;
-    }
-
-    dbPayrolls.push({
-      period,
-      memberId: m.id,
-      gajiPokok: m.gajiPokok,
-      potWajib: wajibNominal,
-      potCicilan,
-      totalPotongan,
-      gajiBersih
+  try {
+    const res = await fetch(`${API_BASE_URL}/payrolls/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period })
     });
-  });
 
-  saveData('db_savings', dbSavings);
-  saveData('db_loans', dbLoans);
-  saveData('db_payrolls', dbPayrolls);
-
-  alert(`Pemotongan Gaji Periode ${period} Berhasil Diproses!`);
-  renderAll();
+    const result = await res.json();
+    if (res.ok) {
+      alert(result.message);
+      renderAll();
+    } else {
+      alert(result.message || 'Gagal memproses pemotongan gaji');
+    }
+  } catch (err) {
+    alert('Terjadi kesalahan koneksi server');
+  }
 }
 
+// Render Semua Komponen
 function renderAll() {
   renderOptions();
   renderDashboard();
@@ -330,7 +318,7 @@ function renderAll() {
   renderPayroll();
 }
 
-// Initial Check Auth on Load
+// Initial Check Auth saat Halaman Dimuat
 window.onload = () => {
   checkAuth();
 };

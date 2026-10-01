@@ -262,3 +262,5 @@ app.post('/api/payrolls/process', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server Backend Koperasi berjalan di http://localhost:${PORT}`);
 });
+
+module.exports = app;

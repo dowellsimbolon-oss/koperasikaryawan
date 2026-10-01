@@ -388,20 +388,25 @@ input:focus, select:focus {
 /* ================= RESPONSIVE UNTUK HP ================= */
 @media (max-width: 768px) {
   .app-layout {
-    flex-direction: column; /* Ubah layout dari samping ke atas-bawah */
+    flex-direction: column;
   }
 
   .sidebar {
-    width: 100%; /* Sidebar menyesuaikan lebar HP */
+    width: 100%;
     min-height: auto;
   }
 
   .layout-split {
-    grid-template-columns: 1fr; /* Form dan tabel disusun menumpuk */
+    grid-template-columns: 1fr;
   }
 
   .login-card {
     padding: 24px;
     margin: 10px;
+  }
+
+  .payroll-controls {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
