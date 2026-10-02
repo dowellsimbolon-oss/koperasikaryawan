@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 
-// Middleware CORS Fleksibel untuk Frontend (GitHub Pages / Vercel Frontend)
+// 1. MIDDLEWARE CORS & BODY PARSER
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -15,14 +15,15 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'koperasi_secret_key_2026';
 
-// Konfigurasi Database MySQL / TiDB Cloud Dinamis
+// 2. KONFIGURASI DATABASE MYSQL / TIDB CLOUD
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 4000,
+  port: parseInt(process.env.DB_PORT, 10) || 4000,
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'db_koperasi',
@@ -31,21 +32,21 @@ const dbConfig = {
   queueLimit: 0
 };
 
-// Aktifkan SSL otomatis jika terhubung ke cloud (bukan localhost)
-if (process.env.DB_HOST && process.env.DB_HOST !== 'localhost' && process.env.DB_HOST !== '127.0.0.1') {
-  dbConfig.ssl = { rejectUnauthorized: true };
+// SSL Kompatibel untuk TiDB Cloud / Remote DB di Vercel
+if (process.env.DB_HOST && !['localhost', '127.0.0.1'].includes(process.env.DB_HOST)) {
+  dbConfig.ssl = { rejectUnauthorized: false };
 }
 
 const db = mysql.createPool(dbConfig);
 
-// Middleware Authentikasi JWT
+// 3. MIDDLEWARE AUTENTIKASI JWT
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ message: 'Akses ditolak. Token tidak ditemukan.' });
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ message: 'Token tidak valid.' });
+    if (err) return res.status(403).json({ message: 'Token tidak valid atau telah kadaluwarsa.' });
     req.user = user;
     next();
   });
@@ -53,8 +54,8 @@ const authenticateToken = (req, res, next) => {
 
 // ================= API ENDPOINTS =================
 
-// 0. HEALTH CHECK
-app.get('/', (req, res) => {
+// 0. HEALTH CHECK (Mendukung / dan /api)
+app.get(['/', '/api'], (req, res) => {
   res.json({ message: 'API Backend Koperasi Berhasil Berjalan di Vercel!' });
 });
 
@@ -62,6 +63,10 @@ app.get('/', (req, res) => {
 const handleLogin = async (req, res) => {
   try {
     const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Username dan password wajib diisi!' });
+    }
+
     const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
 
     if (rows.length === 0) {
@@ -87,16 +92,16 @@ const handleLogin = async (req, res) => {
       user: { id: user.id, username: user.username, name: user.name, role: user.role }
     });
   } catch (error) {
+    console.error('Login Error:', error);
     res.status(500).json({ error: error.message });
   }
 };
 
-// 1. AUTHENTICATION (LOGIN)
-app.post('/api/login', handleLogin);
-app.post('/api/auth/login', handleLogin);
+// 1. AUTHENTICATION (Fleksibel memanggil jalur mana saja)
+app.post(['/login', '/api/login', '/api/auth/login'], handleLogin);
 
 // 2. DASHBOARD SUMMARY
-app.get('/api/dashboard/summary', async (req, res) => {
+app.get(['/dashboard/summary', '/api/dashboard/summary'], async (req, res) => {
   try {
     const [[savingsRes]] = await db.query('SELECT COALESCE(SUM(pokok + wajib + sukarela), 0) AS totalSavings FROM savings');
     const [[loansRes]] = await db.query('SELECT COALESCE(SUM(remaining_amount), 0) AS totalLoans FROM loans WHERE status = "APPROVED"');
@@ -113,7 +118,7 @@ app.get('/api/dashboard/summary', async (req, res) => {
 });
 
 // 3. MEMBERS (ANGGOTA)
-app.get('/api/members', async (req, res) => {
+app.get(['/members', '/api/members'], authenticateToken, async (req, res) => {
   try {
     const [members] = await db.query('SELECT id, nik, nama, dept, gaji_pokok AS gajiPokok FROM members');
     res.json(members);
@@ -123,7 +128,7 @@ app.get('/api/members', async (req, res) => {
 });
 
 // 4. SIMPANAN (SAVINGS)
-app.get('/api/savings', async (req, res) => {
+app.get(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT s.member_id AS memberId, m.nama, 
@@ -139,7 +144,7 @@ app.get('/api/savings', async (req, res) => {
   }
 });
 
-app.post('/api/savings', async (req, res) => {
+app.post(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
   try {
     const { memberId, type, amount } = req.body;
     
@@ -160,7 +165,7 @@ app.post('/api/savings', async (req, res) => {
 });
 
 // 5. PINJAMAN (LOANS)
-app.get('/api/loans', async (req, res) => {
+app.get(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT l.id, l.member_id AS memberId, m.nama, 
@@ -179,13 +184,13 @@ app.get('/api/loans', async (req, res) => {
   }
 });
 
-app.post('/api/loans', async (req, res) => {
+app.post(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
   try {
     const { memberId, amount, tenor } = req.body;
 
     const pokok = amount / tenor;
     const bunga = amount * 0.01;
-    const monthly = pokok + bunga;
+    const monthly = Math.round(pokok + bunga); // Dibulatkan agar tidak desimal desimal
     const remaining = monthly * tenor;
     const loanId = 'L-' + Date.now();
 
@@ -201,7 +206,7 @@ app.post('/api/loans', async (req, res) => {
 });
 
 // 6. PAYROLL DEDUCTION
-app.get('/api/payrolls', async (req, res) => {
+app.get(['/payrolls', '/api/payrolls'], authenticateToken, async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT p.id, p.period, p.member_id AS memberId, m.nama, 
@@ -220,7 +225,7 @@ app.get('/api/payrolls', async (req, res) => {
   }
 });
 
-app.post('/api/payrolls/process', async (req, res) => {
+app.post(['/payrolls/process', '/api/payrolls/process'], authenticateToken, async (req, res) => {
   const connection = await db.getConnection();
   try {
     const { period } = req.body;
@@ -275,7 +280,7 @@ app.post('/api/payrolls/process', async (req, res) => {
   }
 });
 
-// Fallback 404
+// Fallback 404 (Satu-satunya titik penanganan jika endpoint tidak ditemukan)
 app.use((req, res) => {
   res.status(404).json({ message: 'Endpoint tidak ditemukan.' });
 });
@@ -286,12 +291,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Terjadi kesalahan pada server.' });
 });
 
-// Menjalankan listener server lokal (Otomatis dilewati saat berjalan di Serverless Vercel)
+// Menjalankan listener lokal
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`Server Backend Koperasi berjalan di http://localhost:${PORT}`);
   });
 }
 
-// Export Express App untuk Vercel Serverless Function
+// Export Express App untuk Vercel Serverless
 module.exports = app;
