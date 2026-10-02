@@ -6,28 +6,39 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const app = express();
+
+// Middleware CORS Fleksibel untuk Frontend (GitHub Pages / Vercel Frontend)
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
-app.use(cors());
 
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'koperasi_secret_key_2026';
 
-// Koneksi Database MySQL (TiDB Cloud / MySQL)
-const db = mysql.createPool({
+// Konfigurasi Database MySQL / TiDB Cloud Dinamis
+const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 4000,
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'db_koperasi',
-  ssl: {
-    rejectUnauthorized: true
-  },
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
-});
+};
 
-// Middleware Authentikasi JWT (Opsional untuk route terlindungi)
+// Aktifkan SSL otomatis jika terhubung ke cloud (bukan localhost)
+if (process.env.DB_HOST && process.env.DB_HOST !== 'localhost' && process.env.DB_HOST !== '127.0.0.1') {
+  dbConfig.ssl = { rejectUnauthorized: true };
+}
+
+const db = mysql.createPool(dbConfig);
+
+// Middleware Authentikasi JWT
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -42,8 +53,13 @@ const authenticateToken = (req, res, next) => {
 
 // ================= API ENDPOINTS =================
 
-// 1. AUTHENTICATION (LOGIN)
-app.post('/api/auth/login', async (req, res) => {
+// 0. HEALTH CHECK
+app.get('/', (req, res) => {
+  res.json({ message: 'API Backend Koperasi Berhasil Berjalan di Vercel!' });
+});
+
+// Handler Logika Login
+const handleLogin = async (req, res) => {
   try {
     const { username, password } = req.body;
     const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
@@ -73,7 +89,11 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
+};
+
+// 1. AUTHENTICATION (LOGIN)
+app.post('/api/login', handleLogin);
+app.post('/api/auth/login', handleLogin);
 
 // 2. DASHBOARD SUMMARY
 app.get('/api/dashboard/summary', async (req, res) => {
@@ -164,7 +184,7 @@ app.post('/api/loans', async (req, res) => {
     const { memberId, amount, tenor } = req.body;
 
     const pokok = amount / tenor;
-    const bunga = amount * 0.01; // 1% Bunga per bulan
+    const bunga = amount * 0.01;
     const monthly = pokok + bunga;
     const remaining = monthly * tenor;
     const loanId = 'L-' + Date.now();
@@ -212,13 +232,11 @@ app.post('/api/payrolls/process', async (req, res) => {
     const wajibNominal = 100000;
 
     for (const m of members) {
-      // 1. Tambah Simpanan Wajib Rutin
       await connection.query(`
         INSERT INTO savings (member_id, wajib) VALUES (?, ?)
         ON DUPLICATE KEY UPDATE wajib = wajib + VALUES(wajib)
       `, [m.id, wajibNominal]);
 
-      // 2. Cek Pinjaman Aktif
       const [loans] = await connection.query(
         'SELECT id, monthly_installment, remaining_amount FROM loans WHERE member_id = ? AND remaining_amount > 0 AND status = "APPROVED" LIMIT 1',
         [m.id]
@@ -237,7 +255,6 @@ app.post('/api/payrolls/process', async (req, res) => {
         );
       }
 
-      // 3. Simpan Rekap Payroll
       const totalPotongan = wajibNominal + potCicilan;
       const gajiBersih = Number(m.gaji_pokok) - totalPotongan;
 
@@ -258,9 +275,23 @@ app.post('/api/payrolls/process', async (req, res) => {
   }
 });
 
-// START SERVER
-app.listen(PORT, () => {
-  console.log(`Server Backend Koperasi berjalan di http://localhost:${PORT}`);
+// Fallback 404
+app.use((req, res) => {
+  res.status(404).json({ message: 'Endpoint tidak ditemukan.' });
 });
 
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error('Server Error:', err);
+  res.status(500).json({ error: err.message || 'Terjadi kesalahan pada server.' });
+});
+
+// Menjalankan listener server lokal (Otomatis dilewati saat berjalan di Serverless Vercel)
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Server Backend Koperasi berjalan di http://localhost:${PORT}`);
+  });
+}
+
+// Export Express App untuk Vercel Serverless Function
 module.exports = app;
