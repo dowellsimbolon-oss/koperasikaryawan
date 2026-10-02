@@ -54,7 +54,7 @@ const authenticateToken = (req, res, next) => {
 
 // ================= API ENDPOINTS =================
 
-// 0. HEALTH CHECK (Mendukung / dan /api)
+// 0. HEALTH CHECK
 app.get(['/', '/api'], (req, res) => {
   res.json({ message: 'API Backend Koperasi Berhasil Berjalan di Vercel!' });
 });
@@ -97,11 +97,11 @@ const handleLogin = async (req, res) => {
   }
 };
 
-// 1. AUTHENTICATION (Fleksibel memanggil jalur mana saja)
-app.post(['/login', '/api/login', '/api/auth/login'], handleLogin);
+// 1. AUTHENTICATION (Fleksibel mendukung pola *login)
+app.post(['/login', '/api/login', '*login'], handleLogin);
 
 // 2. DASHBOARD SUMMARY
-app.get(['/dashboard/summary', '/api/dashboard/summary'], async (req, res) => {
+app.get(['/dashboard/summary', '/api/dashboard/summary', '*dashboard/summary'], async (req, res) => {
   try {
     const [[savingsRes]] = await db.query('SELECT COALESCE(SUM(pokok + wajib + sukarela), 0) AS totalSavings FROM savings');
     const [[loansRes]] = await db.query('SELECT COALESCE(SUM(remaining_amount), 0) AS totalLoans FROM loans WHERE status = "APPROVED"');
@@ -118,7 +118,7 @@ app.get(['/dashboard/summary', '/api/dashboard/summary'], async (req, res) => {
 });
 
 // 3. MEMBERS (ANGGOTA)
-app.get(['/members', '/api/members'], authenticateToken, async (req, res) => {
+app.get(['/members', '/api/members', '*members'], authenticateToken, async (req, res) => {
   try {
     const [members] = await db.query('SELECT id, nik, nama, dept, gaji_pokok AS gajiPokok FROM members');
     res.json(members);
@@ -128,7 +128,7 @@ app.get(['/members', '/api/members'], authenticateToken, async (req, res) => {
 });
 
 // 4. SIMPANAN (SAVINGS)
-app.get(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
+app.get(['/savings', '/api/savings', '*savings'], authenticateToken, async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT s.member_id AS memberId, m.nama, 
@@ -144,7 +144,7 @@ app.get(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
   }
 });
 
-app.post(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
+app.post(['/savings', '/api/savings', '*savings'], authenticateToken, async (req, res) => {
   try {
     const { memberId, type, amount } = req.body;
     
@@ -165,7 +165,7 @@ app.post(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
 });
 
 // 5. PINJAMAN (LOANS)
-app.get(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
+app.get(['/loans', '/api/loans', '*loans'], authenticateToken, async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT l.id, l.member_id AS memberId, m.nama, 
@@ -184,13 +184,13 @@ app.get(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
   }
 });
 
-app.post(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
+app.post(['/loans', '/api/loans', '*loans'], authenticateToken, async (req, res) => {
   try {
     const { memberId, amount, tenor } = req.body;
 
     const pokok = amount / tenor;
     const bunga = amount * 0.01;
-    const monthly = Math.round(pokok + bunga); // Dibulatkan agar tidak desimal desimal
+    const monthly = Math.round(pokok + bunga);
     const remaining = monthly * tenor;
     const loanId = 'L-' + Date.now();
 
@@ -206,7 +206,7 @@ app.post(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
 });
 
 // 6. PAYROLL DEDUCTION
-app.get(['/payrolls', '/api/payrolls'], authenticateToken, async (req, res) => {
+app.get(['/payrolls', '/api/payrolls', '*payrolls'], authenticateToken, async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT p.id, p.period, p.member_id AS memberId, m.nama, 
@@ -225,7 +225,7 @@ app.get(['/payrolls', '/api/payrolls'], authenticateToken, async (req, res) => {
   }
 });
 
-app.post(['/payrolls/process', '/api/payrolls/process'], authenticateToken, async (req, res) => {
+app.post(['/payrolls/process', '/api/payrolls/process', '*payrolls/process'], authenticateToken, async (req, res) => {
   const connection = await db.getConnection();
   try {
     const { period } = req.body;
@@ -280,7 +280,7 @@ app.post(['/payrolls/process', '/api/payrolls/process'], authenticateToken, asyn
   }
 });
 
-// Fallback 404 (Satu-satunya titik penanganan jika endpoint tidak ditemukan)
+// Fallback 404
 app.use((req, res) => {
   res.status(404).json({ message: 'Endpoint tidak ditemukan.' });
 });
@@ -298,5 +298,5 @@ if (!process.env.VERCEL) {
   });
 }
 
-// Export Express App untuk Vercel Serverless
+// Export Express App untuk Vercel
 module.exports = app;
