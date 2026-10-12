@@ -665,24 +665,31 @@ async function handleLoanAction(loanId, action) {
 document.addEventListener('DOMContentLoaded', loadPendingLoans);
 
 function checkRoleAccess() {
-    // Ambil data user yang sedang login dari localStorage / Session
-    const currentUser = JSON.parse(localStorage.getItem('user')) || {}; 
-    const role = currentUser.role;
+    let currentUser = null;
+    try {
+        currentUser = JSON.parse(localStorage.getItem('user')) || 
+                      JSON.parse(localStorage.getItem('currentUser')) || {};
+    } catch (e) {
+        currentUser = {};
+    }
 
-    // Ambil semua elemen khusus admin/pengurus
+    // Mendapatkan role dari objek user atau langsung dari localStorage
+    const role = currentUser.role || currentUser.jabatan || localStorage.getItem('role') || '';
+    const roleLower = role.toLowerCase();
+
     const adminElements = document.querySelectorAll('.admin-only');
 
-    if (role === 'Pengurus Koperasi' || role === 'Bendahara Koperasi') {
-        // Tampilkan elemen khusus pengurus/bendahara
+    // Cek apakah yang login adalah Pengurus, Bendahara, atau Admin/Petugas
+    if (roleLower.includes('pengurus') || roleLower.includes('bendahara') || roleLower.includes('admin') || roleLower.includes('petugas')) {
         adminElements.forEach(el => el.style.display = 'block');
-        
-        // Muat data pending loans
         if (typeof loadPendingLoans === 'function') loadPendingLoans();
     } else {
-        // Sembunyikan dari Karyawan / Anggota biasa
+        // Jika Karyawan / Anggota biasa, sembunyikan fitur admin
         adminElements.forEach(el => el.style.display = 'none');
     }
 }
 
-// Panggil fungsi ini saat halaman selesai dimuat atau setelah login
-document.addEventListener('DOMContentLoaded', checkRoleAccess);
+// Jalankan saat halaman dimuat
+document.addEventListener('DOMContentLoaded', () => {
+    checkRoleAccess();
+});
