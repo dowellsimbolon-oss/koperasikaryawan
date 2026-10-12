@@ -9,36 +9,39 @@
 </head>
 <body>
 
-  <!-- ================= LAYAR LOGIN ================= -->
-  <div id="login-screen" class="login-container">
-    <div class="login-card">
-      <div class="login-header">
-        <h2>Koperasi Karyawan</h2>
-        <h3>PT. Theo Marhara Abadi</h3>
-        <p>Silakan masuk ke akun Anda</p>
-      </div>
-
-      <form id="form-login">
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input type="text" id="username" placeholder="Masukkan username (contoh: admin)" required>
-        </div>
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" placeholder="Masukkan password" required>
-        </div>
-        
-        <div id="login-error" class="error-msg" style="display: none;">
-          Username atau password salah!
-        </div>
-
-        <button type="submit" class="btn btn-primary btn-login">Masuk/Sign</button>
-      </form>
-
-     
-      </div>
+        <!-- ================= LAYAR LOGIN ================= -->
+<div id="login-screen" class="login-container">
+  <div class="login-card">
+    <div class="login-header">
+      <h2>Koperasi Karyawan</h2>
+      <h3>PT. Theo Marhara Abadi</h3>
+      <p>Silakan masuk ke akun Anda</p>
     </div>
+
+    <form id="form-login">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Masukkan username (contoh: admin)" required>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Masukkan password" required>
+      </div>
+      
+      <div id="login-error" class="error-msg" style="display: none;">
+        Username atau password salah!
+      </div>
+
+      <!-- ⬇️ TOMBOL UTAMA YANG SUDAH DITAMBAHKAN SPINNER ⬇️ -->
+      <button type="submit" id="btn-login" class="btn btn-primary btn-login">
+        <span id="btn-text">Masuk/Sign</span>
+        <span id="btn-spinner" class="spinner-small" style="display: none;"></span>
+      </button>
+    </form>
+
   </div>
+</div>
+
 
   <!-- ================= APLIKASI UTAMA ================= -->
   <div id="main-app" class="app-layout" style="display: none;">

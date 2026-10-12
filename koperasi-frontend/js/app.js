@@ -22,27 +22,41 @@ function checkAuth() {
   const mainApp = document.getElementById('main-app');
 
   if (loggedUser) {
-    loginScreen.style.display = 'none';
-    mainApp.style.display = 'flex';
+    if (loginScreen) loginScreen.style.display = 'none';
+    if (mainApp) mainApp.style.display = 'flex';
 
     // Update UI Badge User
-    document.getElementById('user-name').innerText = loggedUser.name;
-    document.getElementById('user-role').innerText = loggedUser.role;
-    document.getElementById('user-avatar').innerText = loggedUser.name ? loggedUser.name.charAt(0).toUpperCase() : 'U';
+    const userNameEl = document.getElementById('user-name');
+    const userRoleEl = document.getElementById('user-role');
+    const userAvatarEl = document.getElementById('user-avatar');
+
+    if (userNameEl) userNameEl.innerText = loggedUser.name;
+    if (userRoleEl) userRoleEl.innerText = loggedUser.role;
+    if (userAvatarEl) userAvatarEl.innerText = loggedUser.name ? loggedUser.name.charAt(0).toUpperCase() : 'U';
 
     renderAll();
   } else {
-    loginScreen.style.display = 'flex';
-    mainApp.style.display = 'none';
+    if (loginScreen) loginScreen.style.display = 'flex';
+    if (mainApp) mainApp.style.display = 'none';
   }
 }
 
-// Form Submit Login (Post to Express API)
+// Form Submit Login (Dilengkapi Loading Spinner pada Tombol)
 document.getElementById('form-login').addEventListener('submit', async function(e) {
   e.preventDefault();
   const usernameInput = document.getElementById('username').value.trim();
   const passwordInput = document.getElementById('password').value.trim();
   const errorMsg = document.getElementById('login-error');
+
+  const btnLogin = document.getElementById('btn-login');
+  const btnText = document.getElementById('btn-text');
+  const btnSpinner = document.getElementById('btn-spinner');
+
+  // 1. Tampilkan state loading & nonaktifkan tombol
+  if (btnLogin) btnLogin.disabled = true;
+  if (btnText) btnText.textContent = "Memproses...";
+  if (btnSpinner) btnSpinner.style.display = "inline-block";
+  if (errorMsg) errorMsg.style.display = 'none';
 
   try {
     const response = await fetch(`${API_BASE_URL}/login`, {
@@ -69,7 +83,17 @@ document.getElementById('form-login').addEventListener('submit', async function(
       }
     }
   } catch (error) {
-    alert('Tidak dapat terhubung ke server backend! Pastikan server Express berjalan.');
+    if (errorMsg) {
+      errorMsg.innerText = 'Tidak dapat terhubung ke server backend!';
+      errorMsg.style.display = 'block';
+    } else {
+      alert('Tidak dapat terhubung ke server backend! Pastikan server Express berjalan.');
+    }
+  } finally {
+    // 2. Kembalikan tombol seperti semula setelah selesai
+    if (btnLogin) btnLogin.disabled = false;
+    if (btnText) btnText.textContent = "Masuk/Sign";
+    if (btnSpinner) btnSpinner.style.display = "none";
   }
 });
 
@@ -87,8 +111,9 @@ function switchTab(tabId, btnElement) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
 
-  document.getElementById(`tab-${tabId}`).classList.add('active');
-  btnElement.classList.add('active');
+  const targetTab = document.getElementById(`tab-${tabId}`);
+  if (targetTab) targetTab.classList.add('active');
+  if (btnElement) btnElement.classList.add('active');
 
   renderAll();
 }
@@ -96,6 +121,9 @@ function switchTab(tabId, btnElement) {
 // --- RENDER FUNCTIONS (FETCH FROM API) ---
 
 async function renderDashboard() {
+  const spinner = document.getElementById('loading-spinner');
+  if (spinner) spinner.style.display = 'flex'; // Munculkan spinner data
+
   try {
     // 1. Fetch Ringkasan Dashboard
     const resSummary = await fetch(`${API_BASE_URL}/dashboard/summary`, {
@@ -115,20 +143,24 @@ async function renderDashboard() {
     if (resMembers.ok) {
       const members = await resMembers.json();
       const tbody = document.getElementById('member-list-tbody');
-      tbody.innerHTML = '';
-      members.forEach(m => {
-        tbody.innerHTML += `
-          <tr>
-            <td><strong>${m.id}</strong></td>
-            <td>${m.nama}</td>
-            <td>${m.dept}</td>
-            <td>${formatRupiah(m.gajiPokok || m.gaji_pokok)}</td>
-          </tr>
-        `;
-      });
+      if (tbody) {
+        tbody.innerHTML = '';
+        members.forEach(m => {
+          tbody.innerHTML += `
+            <tr>
+              <td><strong>${m.id}</strong></td>
+              <td>${m.nama}</td>
+              <td>${m.dept}</td>
+              <td>${formatRupiah(m.gajiPokok || m.gaji_pokok)}</td>
+            </tr>
+          `;
+        });
+      }
     }
   } catch (err) {
     console.error('Error rendering dashboard:', err);
+  } finally {
+    if (spinner) spinner.style.display = 'none'; // Sembunyikan spinner data
   }
 }
 
@@ -288,9 +320,13 @@ function calculateLoanPreview() {
   const bunga = amount * 0.01;
   const totalCicilan = pokok + bunga;
 
-  document.getElementById('prev-pokok').innerText = formatRupiah(pokok);
-  document.getElementById('prev-bunga').innerText = formatRupiah(bunga);
-  document.getElementById('prev-total').innerText = formatRupiah(totalCicilan);
+  const elPokok = document.getElementById('prev-pokok');
+  const elBunga = document.getElementById('prev-bunga');
+  const elTotal = document.getElementById('prev-total');
+
+  if (elPokok) elPokok.innerText = formatRupiah(pokok);
+  if (elBunga) elBunga.innerText = formatRupiah(bunga);
+  if (elTotal) elTotal.innerText = formatRupiah(totalCicilan);
 
   return totalCicilan;
 }
@@ -328,7 +364,8 @@ if (formLoan) {
 
 // 3. Proses Pemotongan Gaji (Payroll Deduction)
 async function processPayrollDeduction() {
-  const period = document.getElementById('payroll-period').value;
+  const periodInput = document.getElementById('payroll-period');
+  const period = periodInput ? periodInput.value : '';
   if (!period) return alert('Pilih periode pemotongan terlebih dahulu!');
 
   if (!confirm(`Proses pemotongan gaji untuk periode ${period}?`)) return;
