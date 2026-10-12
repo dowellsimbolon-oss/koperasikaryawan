@@ -86,8 +86,8 @@ INSERT INTO members (id, nik, nama, dept, gaji_pokok) VALUES
 
 -- Data User Login Aplikasi
 INSERT INTO users (id, username, password, name, role) VALUES
-('KOP-001', 'bendahara', 'bendahara123', 'Susanti', 'Bendahara Koperasi'),
-('KOP-002', 'pengurus', 'pengurus123', 'Ivan Sihite', 'Pengurus Koperasi'),
+('KOP-001', 'bendahara', 'bendahara123', 'Budi Santoso', 'Bendahara Koperasi'),
+('KOP-002', 'pengurus', 'pengurus123', 'Siti Rahma', 'Pengurus Koperasi'),
 ('KOP-003', 'dewi', 'dewi123', 'Dewi Lestari', 'Karyawan / Anggota'),
 ('KOP-004', 'karyawan', 'karyawan123', 'Frans Dowell', 'Karyawan / Anggota');
 
@@ -97,3 +97,10 @@ INSERT INTO savings (member_id, pokok, wajib, sukarela) VALUES
 ('KOP-002', 500000, 200000, 50000),
 ('KOP-003', 500000, 400000, 150000),
 ('KOP-004', 500000, 300000, 100000);
+-- 1. Perbarui data nama dan departemen untuk Bendahara dan Pengurus di tabel members
+UPDATE members SET nama = 'Susanti', dept = 'Bendahara Koperasi' WHERE id = 'KOP-001';
+UPDATE members SET nama = 'Ivan Sihite', dept = 'Pengurus Koperasi' WHERE id = 'KOP-002';
+
+-- 2. Perbarui juga nama profil pada tabel users agar sinkron sempurna
+UPDATE users SET name = 'Susanti' WHERE id = 'KOP-001';
+UPDATE users SET name = 'Ivan Sihite' WHERE id = 'KOP-002';
