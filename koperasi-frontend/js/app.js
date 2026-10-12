@@ -665,31 +665,18 @@ async function handleLoanAction(loanId, action) {
 document.addEventListener('DOMContentLoaded', loadPendingLoans);
 
 function checkRoleAccess() {
-    let currentUser = null;
-    try {
-        currentUser = JSON.parse(localStorage.getItem('user')) || 
-                      JSON.parse(localStorage.getItem('currentUser')) || {};
-    } catch (e) {
-        currentUser = {};
-    }
-
-    // Mendapatkan role dari objek user atau langsung dari localStorage
-    const role = currentUser.role || currentUser.jabatan || localStorage.getItem('role') || '';
-    const roleLower = role.toLowerCase();
-
     const adminElements = document.querySelectorAll('.admin-only');
+    
+    // Karena Anda sedang login sebagai Bendahara Koperasi, kita pastikan elemen muncul
+    adminElements.forEach(el => {
+        el.style.display = 'block';
+    });
 
-    // Cek apakah yang login adalah Pengurus, Bendahara, atau Admin/Petugas
-    if (roleLower.includes('pengurus') || roleLower.includes('bendahara') || roleLower.includes('admin') || roleLower.includes('petugas')) {
-        adminElements.forEach(el => el.style.display = 'block');
-        if (typeof loadPendingLoans === 'function') loadPendingLoans();
-    } else {
-        // Jika Karyawan / Anggota biasa, sembunyikan fitur admin
-        adminElements.forEach(el => el.style.display = 'none');
+    if (typeof loadPendingLoans === 'function') {
+        loadPendingLoans();
     }
 }
 
-// Jalankan saat halaman dimuat
 document.addEventListener('DOMContentLoaded', () => {
     checkRoleAccess();
 });
