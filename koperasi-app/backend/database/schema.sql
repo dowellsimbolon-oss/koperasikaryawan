@@ -2,20 +2,9 @@ CREATE DATABASE IF NOT EXISTS db_koperasi;
 USE db_koperasi;
 
 -- ==========================================
--- 1. BERSIHKAN TABEL LAMA (URUTAN DROP TEPAT)
+-- 1. PEMBUATAN STRUKTUR TABEL (DDL)
 -- ==========================================
-DROP TABLE IF EXISTS payrolls;
-DROP TABLE IF EXISTS loans;
-DROP TABLE IF EXISTS savings;
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS members;
-
--- ==========================================
--- 2. PEMBUATAN TABEL (DDL)
--- ==========================================
-
--- Table Anggota Karyawan
-CREATE TABLE members (
+CREATE TABLE IF NOT EXISTS members (
     id VARCHAR(20) PRIMARY KEY,
     nik VARCHAR(20) UNIQUE NOT NULL,
     nama VARCHAR(100) NOT NULL,
@@ -24,8 +13,7 @@ CREATE TABLE members (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table User Aplikasi (id menggunakan VARCHAR(20) agar cocok dengan KOP-00X)
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(20) PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
@@ -35,8 +23,7 @@ CREATE TABLE users (
     FOREIGN KEY (id) REFERENCES members(id) ON DELETE CASCADE
 );
 
--- Table Saldo Simpanan Karyawan
-CREATE TABLE savings (
+CREATE TABLE IF NOT EXISTS savings (
     id INT AUTO_INCREMENT PRIMARY KEY,
     member_id VARCHAR(20) UNIQUE NOT NULL,
     pokok DECIMAL(12, 2) DEFAULT 0,
@@ -46,8 +33,7 @@ CREATE TABLE savings (
     FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
 );
 
--- Table Pinjaman Karyawan
-CREATE TABLE loans (
+CREATE TABLE IF NOT EXISTS loans (
     id VARCHAR(30) PRIMARY KEY,
     member_id VARCHAR(20) NOT NULL,
     amount DECIMAL(12, 2) NOT NULL,
@@ -59,8 +45,7 @@ CREATE TABLE loans (
     FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
 );
 
--- Table Riwayat Payroll Deduction
-CREATE TABLE payrolls (
+CREATE TABLE IF NOT EXISTS payrolls (
     id INT AUTO_INCREMENT PRIMARY KEY,
     period VARCHAR(7) NOT NULL,
     member_id VARCHAR(20) NOT NULL,
@@ -74,33 +59,22 @@ CREATE TABLE payrolls (
 );
 
 -- ==========================================
--- 3. SEED DATA AWAL (DML)
+-- 2. SEED DATA MENGGUNAKAN REPLACE (AMAN DARI DUPLIKAT)
 -- ==========================================
-
--- Data Anggota
-INSERT INTO members (id, nik, nama, dept, gaji_pokok) VALUES
-('KOP-001', '317101', 'Budi Santoso', 'IT Support', 8500000),
-('KOP-002', '317102', 'Siti Rahma', 'Human Resources', 7800000),
+REPLACE INTO members (id, nik, nama, dept, gaji_pokok) VALUES
+('KOP-001', '317101', 'Susanti', 'Bendahara Koperasi', 8500000),
+('KOP-002', '317102', 'Ivan Sihite', 'Pengurus Koperasi', 7800000),
 ('KOP-003', '317103', 'Dewi Lestari', 'Finance', 9200000),
 ('KOP-004', '317105', 'Frans Dowell', 'IT', 7500000);
 
--- Data User Login Aplikasi
-INSERT INTO users (id, username, password, name, role) VALUES
-('KOP-001', 'bendahara', 'bendahara123', 'Budi Santoso', 'Bendahara Koperasi'),
-('KOP-002', 'pengurus', 'pengurus123', 'Siti Rahma', 'Pengurus Koperasi'),
+REPLACE INTO users (id, username, password, name, role) VALUES
+('KOP-001', 'bendahara', 'bendahara123', 'Susanti', 'Bendahara Koperasi'),
+('KOP-002', 'pengurus', 'pengurus123', 'Ivan Sihite', 'Pengurus Koperasi'),
 ('KOP-003', 'dewi', 'dewi123', 'Dewi Lestari', 'Karyawan / Anggota'),
 ('KOP-004', 'karyawan', 'karyawan123', 'Frans Dowell', 'Karyawan / Anggota');
 
--- Data Saldo Simpanan
-INSERT INTO savings (member_id, pokok, wajib, sukarela) VALUES
+REPLACE INTO savings (member_id, pokok, wajib, sukarela) VALUES
 ('KOP-001', 500000, 300000, 200000),
 ('KOP-002', 500000, 200000, 50000),
 ('KOP-003', 500000, 400000, 150000),
 ('KOP-004', 500000, 300000, 100000);
--- 1. Perbarui data nama dan departemen untuk Bendahara dan Pengurus di tabel members
-UPDATE members SET nama = 'Susanti', dept = 'Bendahara Koperasi' WHERE id = 'KOP-001';
-UPDATE members SET nama = 'Ivan Sihite', dept = 'Pengurus Koperasi' WHERE id = 'KOP-002';
-
--- 2. Perbarui juga nama profil pada tabel users agar sinkron sempurna
-UPDATE users SET name = 'Susanti' WHERE id = 'KOP-001';
-UPDATE users SET name = 'Ivan Sihite' WHERE id = 'KOP-002';
