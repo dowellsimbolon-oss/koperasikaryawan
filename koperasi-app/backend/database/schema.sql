@@ -86,8 +86,8 @@ INSERT INTO members (id, nik, nama, dept, gaji_pokok) VALUES
 
 -- Data User Login Aplikasi
 INSERT INTO users (id, username, password, name, role) VALUES
-('KOP-001', 'bendahara', 'bendahara123', 'Budi Santoso', 'Bendahara Koperasi'),
-('KOP-002', 'pengurus', 'pengurus123', 'Siti Rahma', 'Pengurus Koperasi'),
+('KOP-001', 'bendahara', 'bendahara123', 'Susanti', 'Bendahara Koperasi'),
+('KOP-002', 'pengurus', 'pengurus123', 'Ivan Sihite', 'Pengurus Koperasi'),
 ('KOP-003', 'dewi', 'dewi123', 'Dewi Lestari', 'Karyawan / Anggota'),
 ('KOP-004', 'karyawan', 'karyawan123', 'Frans Dowell', 'Karyawan / Anggota');
 
