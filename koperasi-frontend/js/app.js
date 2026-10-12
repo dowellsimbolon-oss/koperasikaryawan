@@ -663,3 +663,26 @@ async function handleLoanAction(loanId, action) {
 
 // Panggil fungsi saat halaman dimuat
 document.addEventListener('DOMContentLoaded', loadPendingLoans);
+
+function checkRoleAccess() {
+    // Ambil data user yang sedang login dari localStorage / Session
+    const currentUser = JSON.parse(localStorage.getItem('user')) || {}; 
+    const role = currentUser.role;
+
+    // Ambil semua elemen khusus admin/pengurus
+    const adminElements = document.querySelectorAll('.admin-only');
+
+    if (role === 'Pengurus Koperasi' || role === 'Bendahara Koperasi') {
+        // Tampilkan elemen khusus pengurus/bendahara
+        adminElements.forEach(el => el.style.display = 'block');
+        
+        // Muat data pending loans
+        if (typeof loadPendingLoans === 'function') loadPendingLoans();
+    } else {
+        // Sembunyikan dari Karyawan / Anggota biasa
+        adminElements.forEach(el => el.style.display = 'none');
+    }
+}
+
+// Panggil fungsi ini saat halaman selesai dimuat atau setelah login
+document.addEventListener('DOMContentLoaded', checkRoleAccess);
