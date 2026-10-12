@@ -665,31 +665,43 @@ async function handleLoanAction(loanId, action) {
 document.addEventListener('DOMContentLoaded', loadPendingLoans);
 
 function checkRoleAccess() {
-    // 1. Ambil data user dari localStorage
-    const user = JSON.parse(localStorage.getItem('user')) || 
-                 JSON.parse(localStorage.getItem('currentUser')) || {};
-    
-    // 2. Ambil teks role / jabatan
-    const role = (user.role || user.jabatan || localStorage.getItem('role') || '').toLowerCase();
-    
-    // 3. Ambil teks yang tampil di sidebar profil (misal: "Bendahara Koperasi")
-    const sidebarText = document.body.innerText.toLowerCase();
+    const adminElements = document.querySelectorAll('.admin-only');
+    if (adminElements.length === 0) return;
 
-    // 4. Cek apakah ini Pengurus atau Bendahara
-    const isPengurusOrBendahara = role.includes('pengurus') || 
-                                  role.includes('bendahara') || 
-                                  sidebarText.includes('bendahara koperasi') || 
-                                  sidebarText.includes('pengurus koperasi');
+    // Ambil data user yang sedang login dari localStorage
+    const storedUser = localStorage.getItem('user') || localStorage.getItem('currentUser');
+    
+    if (!storedUser) {
+        // Jika tidak ada data login, sembunyikan fitur admin
+        adminElements.forEach(el => el.style.display = 'none');
+        return;
+    }
 
-    // 5. TAMPILKAN HANYA jika terbukti Pengurus / Bendahara
-    if (isPengurusOrBendahara) {
-        document.querySelectorAll('.admin-only').forEach(el => {
-            el.classList.remove('hidden');
-            el.style.display = 'block';
-        });
-        if (typeof loadPendingLoans === 'function') loadPendingLoans();
+    try {
+        const userObj = JSON.parse(storedUser);
+        // Ambil nilai role atau jabatan dari objek user
+        const roleValue = (userObj.role || userObj.jabatan || "").toLowerCase();
+
+        // Pastikan hanya role Pengurus, Bendahara, atau Admin yang bisa melihat
+        const isPrivileged = roleValue.includes('bendahara') || 
+                             roleValue.includes('pengurus') || 
+                             roleValue.includes('admin');
+
+        if (isPrivileged) {
+            // Tampilkan untuk Pengurus / Bendahara
+            adminElements.forEach(el => el.style.display = 'block');
+            if (typeof loadPendingLoans === 'function') {
+                loadPendingLoans();
+            }
+        } else {
+            // Sembunyikan untuk Karyawan / Anggota biasa
+            adminElements.forEach(el => el.style.display = 'none');
+        }
+    } catch (err) {
+        // Jika terjadi error parsing JSON, amankan dengan menyembunyikannya
+        adminElements.forEach(el => el.style.display = 'none');
     }
 }
 
-// Jalankan saat DOM siap
+// Jalankan saat halaman siap
 document.addEventListener('DOMContentLoaded', checkRoleAccess);
