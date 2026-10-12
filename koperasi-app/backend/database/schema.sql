@@ -77,4 +77,8 @@ REPLACE INTO savings (member_id, pokok, wajib, sukarela) VALUES
 ('KOP-001', 500000, 300000, 200000),
 ('KOP-002', 500000, 200000, 50000),
 ('KOP-003', 500000, 400000, 150000),
+<<<<<<< HEAD
 ('KOP-004', 500000, 300000, 100000);
+=======
+('KOP-004', 500000, 300000, 100000);
+>>>>>>> 9f4155a (Update notifikasi SweetAlert dan perbaikan data)

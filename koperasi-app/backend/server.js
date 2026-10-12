@@ -291,6 +291,48 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Terjadi kesalahan pada server.' });
 });
 
+// Endpoint Tambah Anggota & User Baru
+app.post('/api/members', async (req, res) => {
+    const { nik, nama, dept, gaji_pokok, username, password, role } = req.body;
+    
+    try {
+        // Generate ID otomatis (misal: KOP-005, KOP-006, dst)
+        const [rows] = await db.query('SELECT COUNT(*) as total FROM members');
+        const nextIdNum = rows[0].total + 1;
+        const id = `KOP-${String(nextIdNum).padStart(3, '0')}`;
+
+        // 1. Simpan ke tabel members
+        await db.query(
+            'INSERT INTO members (id, nik, nama, dept, gaji_pokok) VALUES (?, ?, ?, ?, ?)',
+            [id, nik, nama, dept, gaji_pokok]
+        );
+
+        // 2. Simpan ke tabel users untuk login
+        await db.query(
+            'INSERT INTO users (id, username, password, name, role) VALUES (?, ?, ?, ?, ?)',
+            [id, username, password, nama, role || 'Karyawan / Anggota']
+        );
+
+        // 3. Inisialisasi awal saldo simpanan (0) di tabel savings
+        await db.query(
+            'INSERT INTO savings (member_id, pokok, wajib, sukarela) VALUES (?, 0, 0, 0)',
+            [id]
+        );
+
+        res.status(201).json({ 
+            success: true, 
+            message: `Anggota ${nama} berhasil ditambahkan dengan ID ${id}!`,
+            memberId: id 
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Gagal menambahkan anggota: ' + error.message 
+        });
+    }
+});
+
 // Menjalankan listener lokal
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {

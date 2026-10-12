@@ -408,15 +408,33 @@ if (formSavings) {
       });
 
       if (res.ok) {
-        alert('Setoran simpanan berhasil ditambahkan!');
+        Swal.fire({
+    title: 'Berhasil!',
+    text: 'Setoran simpanan berhasil ditambahkan!',
+    icon: 'success',
+    confirmButtonText: 'OK',
+    confirmButtonColor: '#1e3a8a'
+});
         document.getElementById('savings-amount').value = '';
         await renderAll();
       } else {
         const errData = await res.json();
-        alert(errData.message || 'Gagal menambahkan setoran simpanan');
+        Swal.fire({
+        title: 'Gagal!',
+        text: errData.message || 'Gagal menambahkan setoran simpanan',
+        icon: 'error',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#dc2626'
+    });
       }
     } catch (err) {
-      alert('Terjadi kesalahan koneksi server');
+      Swal.fire({
+        title: 'Kesalahan!',
+        text: 'Terjadi kesalahan koneksi server',
+        icon: 'error',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#dc2626'
+    });
     } finally {
       setButtonLoading('btn-save-savings', 'btn-save-savings-text', 'btn-save-savings-spinner', false, 'Simpan Setoran');
     }
@@ -514,3 +532,55 @@ async function processPayrollDeduction() {
 window.onload = () => {
   checkAuth();
 };
+
+document.getElementById('form-add-member')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const payload = {
+        nik: document.getElementById('new-nik').value,
+        nama: document.getElementById('new-nama').value,
+        dept: document.getElementById('new-dept').value,
+        gaji_pokok: document.getElementById('new-gaji').value,
+        username: document.getElementById('new-username').value,
+        password: document.getElementById('new-password').value,
+        role: document.getElementById('new-role').value
+    };
+
+    try {
+        const res = await fetch('http://localhost:5000/api/members', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const result = await res.json();
+        
+        if (res.ok) {
+            Swal.fire({
+                title: 'Berhasil!',
+                text: result.message,
+                icon: 'success',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#1e3a8a'
+            });
+            document.getElementById('form-add-member').reset();
+            if (typeof renderAll === 'function') await renderAll(); // Refresh data di frontend
+        } else {
+            Swal.fire({
+                title: 'Gagal!',
+                text: result.message || 'Gagal menambahkan anggota',
+                icon: 'error',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#dc2626'
+            });
+        }
+    } catch (err) {
+        Swal.fire({
+            title: 'Kesalahan!',
+            text: 'Terjadi kesalahan koneksi server',
+            icon: 'error',
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#dc2626'
+        });
+    }
+});
