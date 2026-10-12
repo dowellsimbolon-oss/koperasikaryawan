@@ -3,269 +3,286 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aplikasi Koperasi Karyawan</title>
+  <title>Koperasi Mandiri TMA - Sistem Koperasi Karyawan</title>
   <link rel="stylesheet" href="css/style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-        <!-- ================= LAYAR LOGIN ================= -->
-<div id="login-screen" class="login-container">
-  <div class="login-card">
-    <div class="login-header">
-      <h2>Koperasi Karyawan</h2>
-      <h3>PT. Theo Marhara Abadi</h3>
-      <p>Silakan masuk ke akun Anda</p>
-    </div>
-
-    <form id="form-login">
-      <div class="form-group">
-        <label for="username">Username</label>
-        <input type="text" id="username" placeholder="Masukkan username (contoh: admin)" required>
-      </div>
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" placeholder="Masukkan password" required>
-      </div>
+  <!-- ================= LAYAR LOGIN ================= -->
+  <div id="login-screen" class="login-container" style="display: flex;">
+    <div class="login-card">
+      <h2>Koperasi Mandiri TMA</h2>
+      <p class="login-subtitle">Silakan masuk ke akun Anda</p>
       
-      <div id="login-error" class="error-msg" style="display: none;">
-        Username atau password salah!
-      </div>
+      <form id="form-login">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="Masukkan username (contoh: admin)" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Masukkan password" required>
+        </div>
 
-      <!-- ⬇️ TOMBOL UTAMA YANG SUDAH DITAMBAHKAN SPINNER ⬇️ -->
-      <button type="submit" id="btn-login" class="btn btn-primary btn-login">
-        <span id="btn-text">Masuk/Sign</span>
-        <span id="btn-spinner" class="spinner-small" style="display: none;"></span>
-      </button>
-    </form>
-
+        <div id="login-error" class="error-msg" style="display: none; color: #dc2626; margin-bottom: 10px; font-size: 14px;"></div>
+        
+        <button type="submit" id="btn-login" class="btn btn-primary">
+          <span id="btn-text">Masuk/Sign</span>
+          <span id="btn-spinner" class="spinner-small" style="display: none;"></span>
+        </button>
+      </form>
+    </div>
   </div>
-</div>
 
-
-  <!-- ================= APLIKASI UTAMA ================= -->
+  <!-- ================= APLIKASI UTAMA (DASHBOARD) ================= -->
   <div id="main-app" class="app-layout" style="display: none;">
-
-    <!-- Sidebar Navigasi -->
+    
+    <!-- SIDEBAR NAVIGATION -->
     <aside class="sidebar">
-      <div>
-        <div class="brand">
-          <h2>Koperasi Mandiri TMA</h2>
-          <p>Sistem Koperasi Karyawan</p>
-        </div>
-
-        <!-- Info Profile User Aktif -->
-        <div class="user-badge">
-          <div class="avatar" id="user-avatar">A</div>
-          <div class="user-info">
-            <span id="user-name" class="user-name">Admin</span>
-            <span id="user-role" class="user-role">Frans Dowell</span>
-          </div>
-        </div>
-
-        <nav class="nav-menu">
-          <button class="nav-btn active" onclick="switchTab('dashboard', this)">
-            <span>📊</span> Dashboard
-          </button>
-          <button class="nav-btn" onclick="switchTab('savings', this)">
-            <span>💰</span> Simpanan
-          </button>
-          <button class="nav-btn" onclick="switchTab('loans', this)">
-            <span>💳</span> Pinjaman
-          </button>
-          <button class="nav-btn" onclick="switchTab('payroll', this)">
-            <span>📄</span> Payroll Deduction
-          </button>
-        </nav>
+      <div class="sidebar-brand">
+        <h3>Koperasi Mandiri TMA</h3>
+        <small>Sistem Koperasi Karyawan</small>
       </div>
+
+      <div class="user-profile-badge">
+        <div id="user-avatar" class="avatar">U</div>
+        <div class="user-info">
+          <span id="user-name">Nama Pengguna</span>
+          <small id="user-role">Role</small>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-btn active" onclick="switchTab('dashboard', this)">📊 Dashboard</button>
+        <button class="nav-btn" onclick="switchTab('savings', this)">💰 Simpanan</button>
+        <button class="nav-btn" onclick="switchTab('loans', this)">💳 Pinjaman</button>
+        <button class="nav-btn" onclick="switchTab('payroll', this)">📄 Payroll Deduction</button>
+      </nav>
 
       <div class="sidebar-footer">
-        <button class="btn-reset mb-10" onclick="resetDatabase()">Reset Data Sample</button>
-        <button class="btn-logout" onclick="handleLogout()">🚪 Keluar (Logout)</button>
+        <button onclick="handleLogout()" class="btn btn-danger btn-block">Keluar (Logout)</button>
       </div>
     </aside>
 
-    <!-- Konten Utama -->
+    <!-- MAIN CONTENT AREA -->
     <main class="main-content">
+      
+      <!-- GLOBAL LOADING SPINNER OVERLAY -->
+      <div id="loading-spinner" class="global-spinner" style="display: none;">
+        <div class="spinner-box">
+          <div class="spinner-large"></div>
+          <p>Memuat data...</p>
+        </div>
+      </div>
 
-      <!-- Tab 1: Dashboard -->
+      <!-- TAB 1: DASHBOARD -->
       <section id="tab-dashboard" class="tab-content active">
-        <header class="top-bar">
-          <h1>Dashboard Ringkasan</h1>
-        </header>
+        <h2>Dashboard Ringkasan</h2>
         
-        <div class="cards-grid">
-          <div class="card card-blue">
-            <h3>Total Simpanan Karyawan</h3>
-            <p id="dash-total-savings">Rp 0</p>
+        <!-- Summary Cards -->
+        <div class="summary-cards">
+          <div class="card-summary card-blue">
+            <span>Total Simpanan Karyawan</span>
+            <h3 id="dash-total-savings">Rp 0</h3>
           </div>
-          <div class="card card-orange">
-            <h3>Total Sisa Pinjaman Active</h3>
-            <p id="dash-total-loans">Rp 0</p>
+          <div class="card-summary card-orange">
+            <span>Total Sisa Pinjaman Active</span>
+            <h3 id="dash-total-loans">Rp 0</h3>
           </div>
-          <div class="card card-green">
-            <h3>Total Anggota Aktif</h3>
-            <p id="dash-total-members">0 Karyawan</p>
+          <div class="card-summary card-green">
+            <span>Total Anggota Aktif</span>
+            <h3 id="dash-total-members">0 Karyawan</h3>
           </div>
         </div>
 
-        <div class="section-card mt-20">
-          <h3>Daftar Anggota Karyawan</h3>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>NIK</th>
-                <th>Nama Karyawan</th>
-                <th>Departemen</th>
-                <th>Gaji Pokok</th>
-              </tr>
-            </thead>
-            <tbody id="member-list-tbody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- Tab 2: Simpanan -->
-      <section id="tab-savings" class="tab-content">
-        <header class="top-bar">
-          <h1>Modul Simpanan Karyawan</h1>
-        </header>
-
-        <div class="layout-split">
-          <div class="form-card">
-            <h3>Tambah Setoran Simpanan</h3>
-            <form id="form-add-savings">
-              <div class="form-group">
-                <label>Pilih Anggota</label>
-                <select id="savings-member-id" required></select>
-              </div>
-              <div class="form-group">
-                <label>Jenis Simpanan</label>
-                <select id="savings-type" required>
-                  <option value="pokok">Simpanan Pokok</option>
-                  <option value="wajib">Simpanan Wajib</option>
-                  <option value="sukarela">Simpanan Sukarela</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Jumlah Nominal (Rp)</label>
-                <input type="number" id="savings-amount" placeholder="Contoh: 100000" min="10000" required>
-              </div>
-              <button type="submit" class="btn btn-primary">Tambah Setoran</button>
-            </form>
-          </div>
-
-          <div class="table-card">
-            <h3>Rekapitulasi Saldo Simpanan</h3>
+        <!-- Data List / Table -->
+        <div class="card mt-4">
+          <h3 class="section-title">Daftar Anggota Karyawan</h3>
+          <div class="table-responsive">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Nama</th>
-                  <th>Simpanan Pokok</th>
-                  <th>Simpanan Wajib</th>
-                  <th>Simpanan Sukarela</th>
-                  <th>Total Saldo</th>
+                  <th>NIK</th>
+                  <th>Nama Karyawan</th>
+                  <th>Departemen</th>
+                  <th>Gaji Pokok</th>
                 </tr>
               </thead>
-              <tbody id="savings-tbody"></tbody>
+              <tbody id="member-list-tbody">
+                <!-- Data injected via JS -->
+              </tbody>
             </table>
           </div>
         </div>
       </section>
 
-      <!-- Tab 3: Pinjaman -->
-      <section id="tab-loans" class="tab-content">
-        <header class="top-bar">
-          <h1>Modul Pinjaman & Kalkulator</h1>
-        </header>
+      <!-- TAB 2: SIMPANAN -->
+      <section id="tab-savings" class="tab-content">
+        <h2>Manajemen Simpanan Koperasi</h2>
 
-        <div class="layout-split">
-          <div class="form-card">
-            <h3>Pengajuan Pinjaman Baru</h3>
-            <form id="form-apply-loan">
-              <div class="form-group">
-                <label>Pilih Anggota</label>
-                <select id="loan-member-id" required></select>
-              </div>
-              <div class="form-group">
-                <label>Jumlah Pinjaman (Rp)</label>
-                <input type="number" id="loan-amount" placeholder="Contoh: 5000000" min="500000" step="100000" required oninput="calculateLoanPreview()">
-              </div>
-              <div class="form-group">
-                <label>Tenor (Bulan)</label>
-                <input type="number" id="loan-tenor" value="12" min="1" max="60" required oninput="calculateLoanPreview()">
-              </div>
-              
-              <div class="calc-preview">
-                <p>Cicilan Pokok/Bln: <strong id="prev-pokok">Rp 0</strong></p>
-                <p>Bunga (1%/Bln): <strong id="prev-bunga">Rp 0</strong></p>
-                <hr>
-                <p class="total-text">Est. Cicilan/Bulan: <strong id="prev-total">Rp 0</strong></p>
-              </div>
+        <!-- Form Tambah Simpanan (Hanya muncul untuk Bendahara/Admin via JS) -->
+        <div id="card-add-savings" class="card mb-4" style="display: none;">
+          <h3>Tambah Setoran Simpanan</h3>
+          <form id="form-add-savings" class="form-grid">
+            <div class="form-group">
+              <label>Pilih Anggota</label>
+              <select id="savings-member-id" class="form-control" required></select>
+            </div>
+            <div class="form-group">
+              <label>Jenis Simpanan</label>
+              <select id="savings-type" class="form-control" required>
+                <option value="pokok">Pokok</option>
+                <option value="wajib">Wajib</option>
+                <option value="sukarela">Sukarela</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Nominal (Rp)</label>
+              <input type="number" id="savings-amount" class="form-control" placeholder="Contoh: 100000" required>
+            </div>
+            <div class="form-group flex-end">
+              <button type="submit" id="btn-save-savings" class="btn btn-success">
+                <span id="btn-save-savings-text">Simpan Setoran</span>
+                <span id="btn-save-savings-spinner" class="spinner-small" style="display: none;"></span>
+              </button>
+            </div>
+          </form>
+        </div>
 
-              <button type="submit" class="btn btn-primary mt-10">Ajukan Pinjaman</button>
-            </form>
-          </div>
-
-          <div class="table-card">
-            <h3>Daftar Pinjaman Karyawan</h3>
+        <!-- Tabel Daftar Simpanan -->
+        <div class="card">
+          <h3>Riwayat & Saldo Simpanan Anggota</h3>
+          <div class="table-responsive">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Nama</th>
-                  <th>Pinjaman Awal</th>
+                  <th>Nama Anggota</th>
+                  <th>Pokok</th>
+                  <th>Wajib</th>
+                  <th>Sukarela</th>
+                  <th>Total Simpanan</th>
+                </tr>
+              </thead>
+              <tbody id="savings-tbody">
+                <!-- Data injected via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: PINJAMAN -->
+      <section id="tab-loans" class="tab-content">
+        <h2>Pengajuan & Riwayat Pinjaman</h2>
+
+        <!-- Form Ajukan Pinjaman -->
+        <div class="card mb-4">
+          <h3>Formulir Pengajuan Pinjaman Baru</h3>
+          <form id="form-apply-loan" class="form-grid">
+            <div class="form-group">
+              <label>Pilih Anggota</label>
+              <select id="loan-member-id" class="form-control" required></select>
+            </div>
+            <div class="form-group">
+              <label>Jumlah Pinjaman (Rp)</label>
+              <input type="number" id="loan-amount" class="form-control" placeholder="Contoh: 5000000" oninput="calculateLoanPreview()" required>
+            </div>
+            <div class="form-group">
+              <label>Tenor (Bulan)</label>
+              <select id="loan-tenor" class="form-control" onchange="calculateLoanPreview()" required>
+                <option value="6">6 Bulan</option>
+                <option value="12">12 Bulan</option>
+                <option value="24">24 Bulan</option>
+              </select>
+            </div>
+
+            <!-- Kalkulator Preview Estimasi Cicilan -->
+            <div class="loan-preview-box">
+              <small>Estimasi Angsuran Per Bulan:</small>
+              <div class="preview-details">
+                <span>Pokok: <strong id="prev-pokok">Rp 0</strong></span>
+                <span>Bunga (1%): <strong id="prev-bunga">Rp 0</strong></span>
+                <span>Total/Bulan: <strong id="prev-total" style="color: #2563eb;">Rp 0</strong></span>
+              </div>
+            </div>
+
+            <div class="form-group flex-end">
+              <button type="submit" id="btn-apply-loan" class="btn btn-primary">
+                <span id="btn-apply-loan-text">Ajukan Pinjaman</span>
+                <span id="btn-apply-loan-spinner" class="spinner-small" style="display: none;"></span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Tabel Daftar Pinjaman -->
+        <div class="card">
+          <h3>Daftar Status Pinjaman</h3>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nama Anggota</th>
+                  <th>Jumlah Pinjaman</th>
                   <th>Tenor</th>
-                  <th>Cicilan/Bln</th>
-                  <th>Sisa Pinjaman</th>
+                  <th>Cicilan / Bln</th>
+                  <th>Sisa Tagihan</th>
                   <th>Status</th>
                 </tr>
               </thead>
-              <tbody id="loans-tbody"></tbody>
+              <tbody id="loans-tbody">
+                <!-- Data injected via JS -->
+              </tbody>
             </table>
           </div>
         </div>
       </section>
 
-      <!-- Tab 4: Payroll Deduction -->
+      <!-- TAB 4: PAYROLL DEDUCTION -->
       <section id="tab-payroll" class="tab-content">
-        <header class="top-bar">
-          <h1>Pemotongan Gaji Auto (Payroll Deduction)</h1>
-        </header>
+        <h2>Simulasi & Riwayat Potong Gaji (Payroll)</h2>
 
-        <div class="section-card">
-          <div class="payroll-controls">
-            <div class="form-group-inline">
-              <label>Periode Pemotongan:</label>
-              <input type="month" id="payroll-period" value="2026-09">
-            </div>
-            <button onclick="processPayrollDeduction()" class="btn btn-success">
-              ⚡ Proses Pemotongan Gaji Otomatis
+        <!-- Panel Tombol Proses Potong Gaji (Hanya untuk Admin/Bendahara) -->
+        <div id="payroll-action-section" class="card mb-4" style="display: none;">
+          <h3>Proses Pemotongan Gaji Massal</h3>
+          <div class="form-inline-group">
+            <input type="month" id="payroll-period" class="form-control" required>
+            <button onclick="processPayrollDeduction()" id="btn-process-payroll" class="btn btn-warning">
+              <span id="btn-process-payroll-text">Proses Potong Gaji</span>
+              <span id="btn-process-payroll-spinner" class="spinner-small" style="display: none;"></span>
             </button>
           </div>
         </div>
 
-        <div class="section-card mt-20">
-          <h3>Riwayat & Rekap Pemotongan Gaji</h3>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Periode</th>
-                <th>Nama Karyawan</th>
-                <th>Gaji Pokok</th>
-                <th>Pot. Simpanan Wajib</th>
-                <th>Pot. Cicilan Pinjaman</th>
-                <th>Total Potongan</th>
-                <th>Gaji Bersih (THP)</th>
-              </tr>
-            </thead>
-            <tbody id="payroll-tbody"></tbody>
-          </table>
+        <!-- Tabel Slip Gaji -->
+        <div class="card">
+          <h3>Laporan Pemotongan Gaji Karyawan</h3>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Periode</th>
+                  <th>Nama Anggota</th>
+                  <th>Gaji Pokok</th>
+                  <th>Simp. Wajib</th>
+                  <th>Cicilan Pinjaman</th>
+                  <th>Total Potongan</th>
+                  <th>Gaji Bersih</th>
+                </tr>
+              </thead>
+              <tbody id="payroll-tbody">
+                <!-- Data injected via JS -->
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
     </main>
   </div>
 
-  <script src="js/app.js?v=2"></script>
+  <!-- Panggil file skrip utama -->
+  <script src="app.js"></script>
 </body>
 </html>

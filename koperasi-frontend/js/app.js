@@ -6,13 +6,36 @@ function formatRupiah(num) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num || 0);
 }
 
-// Helper untuk mengambil Header dengan Token JWT
 function getAuthHeaders() {
   const token = localStorage.getItem('token');
   return {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`
   };
+}
+
+// Cek apakah user yang login adalah Bendahara, Pengurus, atau Admin
+function isAdminOrTreasurer() {
+  const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
+  if (!loggedUser || !loggedUser.role) return false;
+  const role = loggedUser.role.toLowerCase();
+  return role.includes('bendahara') || role.includes('pengurus') || role.includes('admin');
+}
+
+// Helper untuk Toggle State Button Loading
+function setButtonLoading(btnId, btnTextId, btnSpinnerId, isLoading, defaultText = "Kirim") {
+  const btn = document.getElementById(btnId);
+  const textEl = document.getElementById(btnTextId);
+  const spinnerEl = document.getElementById(btnSpinnerId);
+
+  if (btn) btn.disabled = isLoading;
+  if (textEl) textEl.textContent = isLoading ? "Memproses..." : defaultText;
+  if (spinnerEl) spinnerEl.style.display = isLoading ? "inline-block" : "none";
+}
+
+function toggleGlobalSpinner(show) {
+  const spinner = document.getElementById('loading-spinner');
+  if (spinner) spinner.style.display = show ? 'flex' : 'none';
 }
 
 // --- AUTHENTICATION HANDLER ---
@@ -34,6 +57,9 @@ function checkAuth() {
     if (userRoleEl) userRoleEl.innerText = loggedUser.role;
     if (userAvatarEl) userAvatarEl.innerText = loggedUser.name ? loggedUser.name.charAt(0).toUpperCase() : 'U';
 
+    // Sembunyikan/Tampilkan fitur administratif berdasarkan role
+    adjustUIByRole(loggedUser);
+
     renderAll();
   } else {
     if (loginScreen) loginScreen.style.display = 'flex';
@@ -41,21 +67,38 @@ function checkAuth() {
   }
 }
 
-// Form Submit Login (Dilengkapi Loading Spinner pada Tombol)
+// Pengaturan Tampilan Berdasarkan Role
+function adjustUIByRole(loggedUser) {
+  const admin = isAdminOrTreasurer();
+
+  // Kartu input simpanan & panel proses potong gaji hanya untuk admin/bendahara
+  const cardAddSavings = document.getElementById('card-add-savings');
+  const payrollActionSection = document.getElementById('payroll-action-section');
+
+  if (cardAddSavings) cardAddSavings.style.display = admin ? 'block' : 'none';
+  if (payrollActionSection) payrollActionSection.style.display = admin ? 'block' : 'none';
+
+  // Jika anggota biasa, kunci form pinjaman otomatis ke ID mereka sendiri
+  const loanMemberSelect = document.getElementById('loan-member-id');
+  const savingsMemberSelect = document.getElementById('savings-member-id');
+  
+  if (!admin && loggedUser) {
+    // Anggota tidak perlu memilih NIK orang lain saat mengajukan pinjaman
+    if (loanMemberSelect) {
+      loanMemberSelect.innerHTML = `<option value="${loggedUser.id}">${loggedUser.name} (${loggedUser.id})</option>`;
+      loanMemberSelect.disabled = true;
+    }
+  }
+}
+
+// Form Submit Login
 document.getElementById('form-login').addEventListener('submit', async function(e) {
   e.preventDefault();
   const usernameInput = document.getElementById('username').value.trim();
   const passwordInput = document.getElementById('password').value.trim();
   const errorMsg = document.getElementById('login-error');
 
-  const btnLogin = document.getElementById('btn-login');
-  const btnText = document.getElementById('btn-text');
-  const btnSpinner = document.getElementById('btn-spinner');
-
-  // 1. Tampilkan state loading & nonaktifkan tombol
-  if (btnLogin) btnLogin.disabled = true;
-  if (btnText) btnText.textContent = "Memproses...";
-  if (btnSpinner) btnSpinner.style.display = "inline-block";
+  setButtonLoading('btn-login', 'btn-text', 'btn-spinner', true, 'Masuk/Sign');
   if (errorMsg) errorMsg.style.display = 'none';
 
   try {
@@ -78,22 +121,15 @@ document.getElementById('form-login').addEventListener('submit', async function(
       if (errorMsg) {
         errorMsg.innerText = result.error || result.message || 'Login gagal';
         errorMsg.style.display = 'block';
-      } else {
-        alert(result.error || result.message || 'Login gagal');
       }
     }
   } catch (error) {
     if (errorMsg) {
       errorMsg.innerText = 'Tidak dapat terhubung ke server backend!';
       errorMsg.style.display = 'block';
-    } else {
-      alert('Tidak dapat terhubung ke server backend! Pastikan server Express berjalan.');
     }
   } finally {
-    // 2. Kembalikan tombol seperti semula setelah selesai
-    if (btnLogin) btnLogin.disabled = false;
-    if (btnText) btnText.textContent = "Masuk/Sign";
-    if (btnSpinner) btnSpinner.style.display = "none";
+    setButtonLoading('btn-login', 'btn-text', 'btn-spinner', false, 'Masuk/Sign');
   }
 });
 
@@ -118,57 +154,96 @@ function switchTab(tabId, btnElement) {
   renderAll();
 }
 
-// --- RENDER FUNCTIONS (FETCH FROM API) ---
+// --- RENDER FUNCTIONS DENGAN FILTER ROLE ---
 
 async function renderDashboard() {
-  const spinner = document.getElementById('loading-spinner');
-  if (spinner) spinner.style.display = 'flex'; // Munculkan spinner data
+  const admin = isAdminOrTreasurer();
+  const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
 
   try {
-    // 1. Fetch Ringkasan Dashboard
-    const resSummary = await fetch(`${API_BASE_URL}/dashboard/summary`, {
-      headers: getAuthHeaders()
-    });
-    if (resSummary.ok) {
-      const summary = await resSummary.json();
-      document.getElementById('dash-total-savings').innerText = formatRupiah(summary.totalSavings);
-      document.getElementById('dash-total-loans').innerText = formatRupiah(summary.totalLoans);
-      document.getElementById('dash-total-members').innerText = `${summary.totalMembers} Karyawan`;
-    }
+    if (admin) {
+      // Tampilan untuk Bendahara/Pengurus (Global)
+      const resSummary = await fetch(`${API_BASE_URL}/dashboard/summary`, { headers: getAuthHeaders() });
+      if (resSummary.ok) {
+        const summary = await resSummary.json();
+        document.getElementById('dash-total-savings').innerText = formatRupiah(summary.totalSavings);
+        document.getElementById('dash-total-loans').innerText = formatRupiah(summary.totalLoans);
+        document.getElementById('dash-total-members').innerText = `${summary.totalMembers} Karyawan`;
+      }
 
-    // 2. Fetch List Anggota
-    const resMembers = await fetch(`${API_BASE_URL}/members`, {
-      headers: getAuthHeaders()
-    });
-    if (resMembers.ok) {
-      const members = await resMembers.json();
-      const tbody = document.getElementById('member-list-tbody');
-      if (tbody) {
-        tbody.innerHTML = '';
-        members.forEach(m => {
-          tbody.innerHTML += `
+      const resMembers = await fetch(`${API_BASE_URL}/members`, { headers: getAuthHeaders() });
+      if (resMembers.ok) {
+        const members = await resMembers.json();
+        const tbody = document.getElementById('member-list-tbody');
+        if (tbody) {
+          tbody.innerHTML = '';
+          members.forEach(m => {
+            tbody.innerHTML += `
+              <tr>
+                <td><strong>${m.id}</strong></td>
+                <td>${m.nama}</td>
+                <td>${m.dept}</td>
+                <td>${formatRupiah(m.gajiPokok || m.gaji_pokok)}</td>
+              </tr>
+            `;
+          });
+        }
+      }
+    } else {
+      // Tampilan untuk Karyawan/Anggota (Personal Dashboard)
+      const [resSavings, resLoans] = await Promise.all([
+        fetch(`${API_BASE_URL}/savings`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE_URL}/loans`, { headers: getAuthHeaders() })
+      ]);
+
+      if (resSavings.ok && resLoans.ok) {
+        const savingsList = await resSavings.json();
+        const loansList = await resLoans.json();
+
+        // Filter data milik user yang sedang login
+        const mySavings = savingsList.find(s => (s.memberId === loggedUser.id || s.member_id === loggedUser.id || s.id === loggedUser.id)) || { pokok: 0, wajib: 0, sukarela: 0 };
+        const myTotalSavings = (Number(mySavings.pokok) || 0) + (Number(mySavings.wajib) || 0) + (Number(mySavings.sukarela) || 0);
+        
+        const myLoan = loansList.find(l => (l.memberId === loggedUser.id || l.member_id === loggedUser.id)) || { remaining_amount: 0, remaining: 0 };
+        const myRemainingLoan = Number(myLoan.remaining_amount || myLoan.remaining || 0);
+
+        document.getElementById('dash-total-savings').innerText = formatRupiah(myTotalSavings);
+        document.getElementById('dash-total-loans').innerText = formatRupiah(myRemainingLoan);
+        document.getElementById('dash-total-members').innerText = "Akun Pribadi";
+
+        // Ubah judul tabel dashboard khusus untuk karyawan menjadi ringkasan personal
+        const tableContainer = document.querySelector('#tab-dashboard .card, #dash-table-container');
+        const tbody = document.getElementById('member-list-tbody');
+        if (tbody) {
+          document.querySelector('h3.section-title, #table-title')?.replaceChildren(document.createTextNode('Informasi Keuangan Pribadi Anda'));
+          tbody.innerHTML = `
             <tr>
-              <td><strong>${m.id}</strong></td>
-              <td>${m.nama}</td>
-              <td>${m.dept}</td>
-              <td>${formatRupiah(m.gajiPokok || m.gaji_pokok)}</td>
+              <td><strong>Status NIK</strong></td>
+              <td>${loggedUser.id}</td>
+              <td><strong>Nama</strong></td>
+              <td>${loggedUser.name}</td>
+            </tr>
+            <tr>
+              <td><strong>Total Simpanan</strong></td>
+              <td style="color: #16a34a; font-weight: bold;">${formatRupiah(myTotalSavings)}</td>
+              <td><strong>Sisa Pinjaman Aktif</strong></td>
+              <td style="color: #dc2626; font-weight: bold;">${formatRupiah(myRemainingLoan)}</td>
             </tr>
           `;
-        });
+        }
       }
     }
   } catch (err) {
     console.error('Error rendering dashboard:', err);
-  } finally {
-    if (spinner) spinner.style.display = 'none'; // Sembunyikan spinner data
   }
 }
 
 async function renderOptions() {
+  const admin = isAdminOrTreasurer();
+  if (!admin) return; // Karyawan tidak butuh render dropdown banyak member
+
   try {
-    const res = await fetch(`${API_BASE_URL}/members`, {
-      headers: getAuthHeaders()
-    });
+    const res = await fetch(`${API_BASE_URL}/members`, { headers: getAuthHeaders() });
     if (!res.ok) return;
 
     const members = await res.json();
@@ -188,10 +263,11 @@ async function renderOptions() {
 }
 
 async function renderSavings() {
+  const admin = isAdminOrTreasurer();
+  const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
+
   try {
-    const res = await fetch(`${API_BASE_URL}/savings`, {
-      headers: getAuthHeaders()
-    });
+    const res = await fetch(`${API_BASE_URL}/savings`, { headers: getAuthHeaders() });
     if (!res.ok) return;
 
     const savings = await res.json();
@@ -199,11 +275,15 @@ async function renderSavings() {
     if (!tbody) return;
 
     tbody.innerHTML = '';
-    savings.forEach(s => {
+    
+    // Jika anggota biasa, filter hanya simpanan miliknya sendiri
+    const dataToRender = admin ? savings : savings.filter(s => s.memberId === loggedUser.id || s.member_id === loggedUser.id || s.id === loggedUser.id);
+
+    dataToRender.forEach(s => {
       const total = (Number(s.pokok) || 0) + (Number(s.wajib) || 0) + (Number(s.sukarela) || 0);
       tbody.innerHTML += `
         <tr>
-          <td>${s.nama || s.member_id} (${s.memberId || s.member_id})</td>
+          <td>${s.nama || s.member_id || loggedUser.name} (${s.memberId || s.member_id || loggedUser.id})</td>
           <td>${formatRupiah(s.pokok)}</td>
           <td>${formatRupiah(s.wajib)}</td>
           <td>${formatRupiah(s.sukarela)}</td>
@@ -217,10 +297,11 @@ async function renderSavings() {
 }
 
 async function renderLoans() {
+  const admin = isAdminOrTreasurer();
+  const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
+
   try {
-    const res = await fetch(`${API_BASE_URL}/loans`, {
-      headers: getAuthHeaders()
-    });
+    const res = await fetch(`${API_BASE_URL}/loans`, { headers: getAuthHeaders() });
     if (!res.ok) return;
 
     const loans = await res.json();
@@ -228,11 +309,15 @@ async function renderLoans() {
     if (!tbody) return;
 
     tbody.innerHTML = '';
-    loans.forEach(l => {
+
+    // Filter pinjaman jika login sebagai karyawan biasa
+    const dataToRender = admin ? loans : loans.filter(l => l.memberId === loggedUser.id || l.member_id === loggedUser.id);
+
+    dataToRender.forEach(l => {
       const remaining = Number(l.remaining_amount || l.remaining || 0);
       tbody.innerHTML += `
         <tr>
-          <td>${l.nama || l.member_id} (${l.memberId || l.member_id})</td>
+          <td>${l.nama || l.member_id || loggedUser.name} (${l.memberId || l.member_id || loggedUser.id})</td>
           <td>${formatRupiah(l.amount)}</td>
           <td>${l.tenor} Bln</td>
           <td>${formatRupiah(l.monthly_installment || l.monthly)}</td>
@@ -249,10 +334,11 @@ async function renderLoans() {
 }
 
 async function renderPayroll() {
+  const admin = isAdminOrTreasurer();
+  const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
+
   try {
-    const res = await fetch(`${API_BASE_URL}/payrolls`, {
-      headers: getAuthHeaders()
-    });
+    const res = await fetch(`${API_BASE_URL}/payrolls`, { headers: getAuthHeaders() });
     if (!res.ok) return;
 
     const payrolls = await res.json();
@@ -260,11 +346,15 @@ async function renderPayroll() {
     if (!tbody) return;
 
     tbody.innerHTML = '';
-    payrolls.forEach(p => {
+
+    // Filter slip gaji jika login sebagai karyawan biasa
+    const dataToRender = admin ? payrolls : payrolls.filter(p => p.memberId === loggedUser.id || p.member_id === loggedUser.id);
+
+    dataToRender.forEach(p => {
       tbody.innerHTML += `
         <tr>
           <td><strong>${p.period}</strong></td>
-          <td>${p.nama || p.member_id} (${p.memberId || p.member_id})</td>
+          <td>${p.nama || p.member_id || loggedUser.name} (${p.memberId || p.member_id || loggedUser.id})</td>
           <td>${formatRupiah(p.gajiPokok || p.gaji_pokok)}</td>
           <td>${formatRupiah(p.potWajib || p.pot_wajib)}</td>
           <td>${formatRupiah(p.potCicilan || p.pot_cicilan)}</td>
@@ -278,16 +368,37 @@ async function renderPayroll() {
   }
 }
 
-// --- FORM HANDLERS (SEND TO API) ---
+// Global Render
+async function renderAll() {
+  toggleGlobalSpinner(true);
+  try {
+    await Promise.all([
+      renderOptions(),
+      renderDashboard(),
+      renderSavings(),
+      renderLoans(),
+      renderPayroll()
+    ]);
+  } catch (err) {
+    console.error("Error fetching data:", err);
+  } finally {
+    toggleGlobalSpinner(false);
+  }
+}
 
-// 1. Form Tambah Simpanan
+// --- FORM HANDLERS ---
+
 const formSavings = document.getElementById('form-add-savings');
 if (formSavings) {
   formSavings.addEventListener('submit', async function(e) {
     e.preventDefault();
+    if (!isAdminOrTreasurer()) return alert('Akses ditolak. Hanya bendahara yang dapat menambah simpanan.');
+
     const memberId = document.getElementById('savings-member-id').value;
     const type = document.getElementById('savings-type').value;
     const amount = Number(document.getElementById('savings-amount').value);
+
+    setButtonLoading('btn-save-savings', 'btn-save-savings-text', 'btn-save-savings-spinner', true, 'Simpan Setoran');
 
     try {
       const res = await fetch(`${API_BASE_URL}/savings`, {
@@ -299,19 +410,19 @@ if (formSavings) {
       if (res.ok) {
         alert('Setoran simpanan berhasil ditambahkan!');
         document.getElementById('savings-amount').value = '';
-        renderSavings();
-        renderDashboard();
+        await renderAll();
       } else {
         const errData = await res.json();
         alert(errData.message || 'Gagal menambahkan setoran simpanan');
       }
     } catch (err) {
       alert('Terjadi kesalahan koneksi server');
+    } finally {
+      setButtonLoading('btn-save-savings', 'btn-save-savings-text', 'btn-save-savings-spinner', false, 'Simpan Setoran');
     }
   });
 }
 
-// Kalkulator Estimasi Pinjaman (Client Side Preview)
 function calculateLoanPreview() {
   const amount = Number(document.getElementById('loan-amount').value) || 0;
   const tenor = Number(document.getElementById('loan-tenor').value) || 1;
@@ -331,14 +442,18 @@ function calculateLoanPreview() {
   return totalCicilan;
 }
 
-// 2. Form Pengajuan Pinjaman
 const formLoan = document.getElementById('form-apply-loan');
 if (formLoan) {
   formLoan.addEventListener('submit', async function(e) {
     e.preventDefault();
-    const memberId = document.getElementById('loan-member-id').value;
+    const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
+    
+    // Jika admin, ambil dari select. Jika karyawan, gunakan ID diri sendiri.
+    const memberId = isAdminOrTreasurer() ? document.getElementById('loan-member-id').value : loggedUser.id;
     const amount = Number(document.getElementById('loan-amount').value);
     const tenor = Number(document.getElementById('loan-tenor').value);
+
+    setButtonLoading('btn-apply-loan', 'btn-apply-loan-text', 'btn-apply-loan-spinner', true, 'Ajukan Pinjaman');
 
     try {
       const res = await fetch(`${API_BASE_URL}/loans`, {
@@ -348,27 +463,31 @@ if (formLoan) {
       });
 
       if (res.ok) {
-        alert('Pengajuan Pinjaman Disetujui!');
+        alert('Pengajuan Pinjaman Berhasil!');
         document.getElementById('loan-amount').value = '';
-        renderLoans();
-        renderDashboard();
+        await renderAll();
       } else {
         const errData = await res.json();
         alert(errData.message || 'Gagal mengajukan pinjaman');
       }
     } catch (err) {
       alert('Terjadi kesalahan koneksi server');
+    } finally {
+      setButtonLoading('btn-apply-loan', 'btn-apply-loan-text', 'btn-apply-loan-spinner', false, 'Ajukan Pinjaman');
     }
   });
 }
 
-// 3. Proses Pemotongan Gaji (Payroll Deduction)
 async function processPayrollDeduction() {
+  if (!isAdminOrTreasurer()) return alert('Akses ditolak. Fitur ini khusus Pengurus/Bendahara.');
+
   const periodInput = document.getElementById('payroll-period');
   const period = periodInput ? periodInput.value : '';
   if (!period) return alert('Pilih periode pemotongan terlebih dahulu!');
 
   if (!confirm(`Proses pemotongan gaji untuk periode ${period}?`)) return;
+
+  setButtonLoading('btn-process-payroll', 'btn-process-payroll-text', 'btn-process-payroll-spinner', true, 'Proses Potong Gaji');
 
   try {
     const res = await fetch(`${API_BASE_URL}/payrolls/process`, {
@@ -380,25 +499,18 @@ async function processPayrollDeduction() {
     const result = await res.json();
     if (res.ok) {
       alert(result.message);
-      renderAll();
+      await renderAll();
     } else {
       alert(result.message || 'Gagal memproses pemotongan gaji');
     }
   } catch (err) {
     alert('Terjadi kesalahan koneksi server');
+  } finally {
+    setButtonLoading('btn-process-payroll', 'btn-process-payroll-text', 'btn-process-payroll-spinner', false, 'Proses Potong Gaji');
   }
 }
 
-// Render Semua Komponen
-function renderAll() {
-  renderOptions();
-  renderDashboard();
-  renderSavings();
-  renderLoans();
-  renderPayroll();
-}
-
-// Initial Check Auth saat Halaman Dimuat
+// Initial Check Auth
 window.onload = () => {
   checkAuth();
 };
