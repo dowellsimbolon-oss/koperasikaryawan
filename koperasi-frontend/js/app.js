@@ -584,3 +584,82 @@ document.getElementById('form-add-member')?.addEventListener('submit', async (e)
         });
     }
 });
+
+// Fungsi memuat daftar pinjaman 'Pending'
+async function loadPendingLoans() {
+    const tbody = document.getElementById('table-pending-loans');
+    if (!tbody) return;
+
+    try {
+        const res = await fetch('http://localhost:5000/api/loans/pending');
+        const result = await res.json();
+
+        if (result.success && result.data.length > 0) {
+            tbody.innerHTML = result.data.map(loan => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="p-3 font-medium">${loan.member_id}</td>
+                    <td class="p-3">${loan.nama}</td>
+                    <td class="p-3 font-semibold text-blue-900">Rp ${Number(loan.jumlah).toLocaleString('id-ID')}</td>
+                    <td class="p-3">${loan.tenor} Bulan</td>
+                    <td class="p-3 text-center space-x-2">
+                        <button onclick="handleLoanAction('${loan.id}', 'APPROVED')" class="bg-emerald-600 text-white px-3 py-1 rounded-md text-sm hover:bg-emerald-700 transition">
+                            Setujui
+                        </button>
+                        <button onclick="handleLoanAction('${loan.id}', 'REJECTED')" class="bg-rose-600 text-white px-3 py-1 rounded-md text-sm hover:bg-rose-700 transition">
+                            Tolak
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        } else {
+            tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Tidak ada pengajuan pinjaman baru.</td></tr>`;
+        }
+    } catch (err) {
+        console.error('Gagal memuat daftar pinjaman:', err);
+    }
+}
+
+// Fungsi eksekusi persetujuan/penolakan
+async function handleLoanAction(loanId, action) {
+    const isApprove = action === 'APPROVED';
+    const confirm = await Swal.fire({
+        title: isApprove ? 'Setujui Pinjaman?' : 'Tolak Pinjaman?',
+        text: `Apakah Anda yakin ingin ${isApprove ? 'menyetujui' : 'menolak'} pengajuan ini?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: isApprove ? '#059669' : '#dc2626',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: isApprove ? 'Ya, Setujui' : 'Ya, Tolak',
+        cancelButtonText: 'Batal'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+        const res = await fetch('http://localhost:5000/api/loans/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ loan_id: loanId, action: action })
+        });
+
+        const result = await res.json();
+
+        if (res.ok) {
+            Swal.fire({
+                title: 'Berhasil!',
+                text: result.message,
+                icon: 'success',
+                confirmButtonColor: '#1e3a8a'
+            });
+            await loadPendingLoans(); // Refresh tabel
+            if (typeof renderAll === 'function') await renderAll();
+        } else {
+            Swal.fire('Gagal!', result.message || 'Terjadi kesalahan.', 'error');
+        }
+    } catch (err) {
+        Swal.fire('Error!', 'Terjadi kesalahan koneksi server.', 'error');
+    }
+}
+
+// Panggil fungsi saat halaman dimuat
+document.addEventListener('DOMContentLoaded', loadPendingLoans);

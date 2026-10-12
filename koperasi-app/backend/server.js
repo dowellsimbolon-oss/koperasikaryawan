@@ -333,6 +333,43 @@ app.post('/api/members', async (req, res) => {
     }
 });
 
+// 1. Endpoint mendapatkan semua pengajuan pinjaman (Khusus Pengurus/Bendahara)
+app.get('/api/loans/pending', async (req, res) => {
+    try {
+        const [loans] = await db.query(`
+            SELECT l.id, l.member_id, m.nama, l.jumlah, l.tenor, l.status, l.created_at 
+            FROM loans l
+            JOIN members m ON l.member_id = m.id
+            WHERE l.status = 'Pending'
+            ORDER BY l.created_at ASC
+        `);
+        res.json({ success: true, data: loans });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// 2. Endpoint menyetujui atau menolak pinjaman
+app.post('/api/loans/approve', async (req, res) => {
+    const { loan_id, action } = req.body; // action: 'APPROVED' atau 'REJECTED'
+
+    if (!['APPROVED', 'REJECTED'].includes(action)) {
+        return res.status(400).json({ success: false, message: 'Aksi tidak valid' });
+    }
+
+    try {
+        const newStatus = action === 'APPROVED' ? 'Disetujui' : 'Ditolak';
+        await db.query('UPDATE loans SET status = ? WHERE id = ?', [newStatus, loan_id]);
+
+        res.json({ 
+            success: true, 
+            message: `Pengajuan pinjaman berhasil ${newStatus.toLowerCase()}!` 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Gagal memproses persetujuan: ' + error.message });
+    }
+});
+
 // Menjalankan listener lokal
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {

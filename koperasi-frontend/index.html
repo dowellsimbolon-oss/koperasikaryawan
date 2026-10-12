@@ -129,6 +129,27 @@
     </form>
 </div>
 
+<!-- Panel Persetujuan Pinjaman (Khusus Pengurus & Bendahara) -->
+<div class="card p-6 bg-white shadow rounded-lg mb-6">
+    <h3 class="text-xl font-bold text-gray-800 mb-4">Persetujuan Pengajuan Pinjaman</h3>
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead>
+                <tr class="border-b bg-gray-50 text-sm font-semibold text-gray-600">
+                    <th class="p-3">ID Anggota</th>
+                    <th class="p-3">Nama Anggota</th>
+                    <th class="p-3">Jumlah Pinjaman</th>
+                    <th class="p-3">Tenor</th>
+                    <th class="p-3 text-center">Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="table-pending-loans">
+                <!-- Data akan dimuat secara dinamis via JavaScript -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
         <!-- Summary Cards -->
         <div class="summary-cards">
           <div class="card-summary card-blue">
