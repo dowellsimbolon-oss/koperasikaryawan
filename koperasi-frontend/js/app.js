@@ -665,38 +665,47 @@ async function handleLoanAction(loanId, action) {
 document.addEventListener('DOMContentLoaded', loadPendingLoans);
 
 function checkRoleAccess() {
-    let currentUser = {};
-    try {
-        currentUser = JSON.parse(localStorage.getItem('user')) || 
-                      JSON.parse(localStorage.getItem('currentUser')) || {};
-    } catch (e) {
-        currentUser = {};
+    const adminElements = document.querySelectorAll('.admin-only');
+    if (adminElements.length === 0) return;
+
+    // 1. Periksa seluruh data yang ada di localStorage
+    let allStorageData = "";
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const val = localStorage.getItem(key);
+        if (val) allStorageData += " " + val.toLowerCase();
     }
 
-    // Ambil data role atau jabatan user yang sedang login
-    const role = currentUser.role || currentUser.jabatan || localStorage.getItem('role') || '';
-    const roleLower = role.toLowerCase();
+    // 2. Baca teks role/jabatan yang sedang tampil di sidebar profil aplikasi
+    // Mencari elemen kecil di bawah nama user yang menampilkan jabatan
+    const profileRoleElements = document.querySelectorAll('aside p, aside span, .sidebar p, .sidebar span, div.text-xs, div.text-sm');
+    let profileText = "";
+    profileRoleElements.forEach(el => {
+        profileText += " " + el.textContent.toLowerCase();
+    });
 
-    // Ambil elemen khusus admin/pengurus
-    const adminElements = document.querySelectorAll('.admin-only');
+    const combinedInfo = allStorageData + " " + profileText;
 
-    // Cek apakah akun yang login adalah Pengurus, Bendahara, atau Admin
-    const isPrivilegedUser = roleLower.includes('pengurus') || 
-                             roleLower.includes('bendahara') || 
-                             roleLower.includes('admin') ||
-                             roleLower.includes('petugas');
+    // 3. Deteksi apakah termasuk Pengurus, Bendahara, Admin, atau Petugas
+    const isPrivileged = combinedInfo.includes('bendahara') || 
+                         combinedInfo.includes('pengurus') || 
+                         combinedInfo.includes('admin') || 
+                         combinedInfo.includes('petugas');
 
-    if (isPrivilegedUser) {
-        // TAMPILKAN HANYA untuk Pengurus / Bendahara
+    if (isPrivileged) {
+        // Tampilkan fitur khusus Bendahara / Pengurus
         adminElements.forEach(el => el.style.display = 'block');
-        if (typeof loadPendingLoans === 'function') loadPendingLoans();
+        if (typeof loadPendingLoans === 'function') {
+            loadPendingLoans();
+        }
     } else {
-        // SEMBUNYIKAN untuk Karyawan / Anggota biasa
+        // Sembunyikan dari Karyawan / Anggota biasa
         adminElements.forEach(el => el.style.display = 'none');
     }
 }
 
-// Jalankan saat halaman dimuat
+// Jalankan saat halaman dimuat dan berikan jeda singkat agar DOM selesai merender profil
 document.addEventListener('DOMContentLoaded', () => {
     checkRoleAccess();
+    setTimeout(checkRoleAccess, 400);
 });
