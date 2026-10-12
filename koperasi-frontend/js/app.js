@@ -665,18 +665,38 @@ async function handleLoanAction(loanId, action) {
 document.addEventListener('DOMContentLoaded', loadPendingLoans);
 
 function checkRoleAccess() {
-    const adminElements = document.querySelectorAll('.admin-only');
-    
-    // Karena Anda sedang login sebagai Bendahara Koperasi, kita pastikan elemen muncul
-    adminElements.forEach(el => {
-        el.style.display = 'block';
-    });
+    let currentUser = {};
+    try {
+        currentUser = JSON.parse(localStorage.getItem('user')) || 
+                      JSON.parse(localStorage.getItem('currentUser')) || {};
+    } catch (e) {
+        currentUser = {};
+    }
 
-    if (typeof loadPendingLoans === 'function') {
-        loadPendingLoans();
+    // Ambil data role atau jabatan user yang sedang login
+    const role = currentUser.role || currentUser.jabatan || localStorage.getItem('role') || '';
+    const roleLower = role.toLowerCase();
+
+    // Ambil elemen khusus admin/pengurus
+    const adminElements = document.querySelectorAll('.admin-only');
+
+    // Cek apakah akun yang login adalah Pengurus, Bendahara, atau Admin
+    const isPrivilegedUser = roleLower.includes('pengurus') || 
+                             roleLower.includes('bendahara') || 
+                             roleLower.includes('admin') ||
+                             roleLower.includes('petugas');
+
+    if (isPrivilegedUser) {
+        // TAMPILKAN HANYA untuk Pengurus / Bendahara
+        adminElements.forEach(el => el.style.display = 'block');
+        if (typeof loadPendingLoans === 'function') loadPendingLoans();
+    } else {
+        // SEMBUNYIKAN untuk Karyawan / Anggota biasa
+        adminElements.forEach(el => el.style.display = 'none');
     }
 }
 
+// Jalankan saat halaman dimuat
 document.addEventListener('DOMContentLoaded', () => {
     checkRoleAccess();
 });
