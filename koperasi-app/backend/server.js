@@ -60,8 +60,6 @@ app.get(['/', '/api'], (req, res) => {
 });
 
 // Daftarkan rute login
-app.post('/api/login', handleLogin);
-// atau jika menggunakan path auth:
 app.post('/api/auth/login', handleLogin);
 
 // Handler Logika Login

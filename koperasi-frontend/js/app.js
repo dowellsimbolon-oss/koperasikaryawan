@@ -1,5 +1,5 @@
 // --- KONFIGURASI API BACKEND ---
-const API_BASE_URL = 'koperasikaryawan-amos.vercel.app/api';
+const API_BASE_URL = 'https://koperasikaryawan-amos.vercel.app/api';
 
 // --- UTILS FORMATTER & HEADERS ---
 function formatRupiah(num) {
@@ -120,11 +120,11 @@ if (formLogin) {
     if (errorMsg) errorMsg.style.display = 'none';
 
     try {
-      const response = await fetch(`${API_BASE_URL}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: usernameInput, password: passwordInput })
-      });
+     const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+});
 
       const result = await response.json();
 
