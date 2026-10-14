@@ -22,10 +22,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'koperasi_secret_key_2026';
 
 // 2. KONFIGURASI DATABASE MYSQL / TIDB CLOUD
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
+  host: process.env.DB_HOST,
   port: parseInt(process.env.DB_PORT, 10) || 4000,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'db_koperasi',
   waitForConnections: true,
   connectionLimit: 10,
@@ -59,10 +59,7 @@ app.get(['/', '/api'], (req, res) => {
   res.json({ message: 'API Backend Koperasi Berhasil Berjalan di Vercel!' });
 });
 
-// Daftarkan rute login
-app.post('/api/auth/login', handleLogin);
-
-// Handler Logika Login
+// Handler Logika Login yang Disempurnakan
 async function handleLogin(req, res) {
   try {
     const { username, password } = req.body;
@@ -80,21 +77,21 @@ async function handleLogin(req, res) {
     }
 
     const user = rows[0];
-   console.log("Data user ditemukan di DB:", user.username);
-    console.log("Password dari input user:", password);
-    console.log("Password dari database:", user.password);
+    console.log("Data user ditemukan di DB:", user.username);
 
     let isValidPass = false;
-    if (user.password.startsWith('$2b$') || user.password.startsWith('$2a$')) {
+    // Karena password di database Anda tersimpan sebagai teks biasa (plain text)
+    if (user.password && (user.password.startsWith('$2b$') || user.password.startsWith('$2a$'))) {
         isValidPass = await bcrypt.compare(password, user.password);
     } else {
         isValidPass = (password === user.password);
     }
 
     console.log("Hasil validasi password (isValidPass):", isValidPass);
-if (!isValidPass) {
-    return res.status(400).json({ message: 'Username atau password salah!' });
-}
+
+    if (!isValidPass) {
+        return res.status(400).json({ message: 'Username atau password salah!' });
+    }
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role, name: user.name },
@@ -111,13 +108,13 @@ if (!isValidPass) {
     console.error('Login Error:', error);
     res.status(500).json({ error: error.message });
   }
-};
+}
 
-// 1. AUTHENTICATION (Fleksibel mendukung pola *login)
-app.post(['/login', '/api/login', '*login'], handleLogin);
+// Daftarkan rute login secara spesifik
+app.post(['/login', '/api/auth/login', '/api/login'], handleLogin);
 
-// 2. DASHBOARD SUMMARY
-app.get(['/dashboard/summary', '/api/dashboard/summary', '*dashboard/summary'], async (req, res) => {
+// 1. DASHBOARD SUMMARY
+app.get(['/dashboard/summary', '/api/dashboard/summary'], async (req, res) => {
   try {
     const [[savingsRes]] = await db.query('SELECT COALESCE(SUM(pokok + wajib + sukarela), 0) AS totalSavings FROM savings');
     const [[loansRes]] = await db.query('SELECT COALESCE(SUM(remaining_amount), 0) AS totalLoans FROM loans WHERE status = "APPROVED"');
@@ -133,8 +130,8 @@ app.get(['/dashboard/summary', '/api/dashboard/summary', '*dashboard/summary'], 
   }
 });
 
-// 3. MEMBERS (ANGGOTA)
-app.get(['/members', '/api/members', '*members'], authenticateToken, async (req, res) => {
+// 2. MEMBERS (ANGGOTA)
+app.get(['/members', '/api/members'], authenticateToken, async (req, res) => {
   try {
     const [members] = await db.query('SELECT id, nik, nama, dept, gaji_pokok AS gajiPokok FROM members');
     res.json(members);
@@ -143,193 +140,24 @@ app.get(['/members', '/api/members', '*members'], authenticateToken, async (req,
   }
 });
 
-// 4. SIMPANAN (SAVINGS)
-app.get(['/savings', '/api/savings', '*savings'], authenticateToken, async (req, res) => {
-  try {
-    const [rows] = await db.query(`
-      SELECT s.member_id AS memberId, m.nama, 
-             CAST(s.pokok AS UNSIGNED) AS pokok, 
-             CAST(s.wajib AS UNSIGNED) AS wajib, 
-             CAST(s.sukarela AS UNSIGNED) AS sukarela
-      FROM savings s
-      JOIN members m ON s.member_id = m.id
-    `);
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post(['/savings', '/api/savings', '*savings'], authenticateToken, async (req, res) => {
-  try {
-    const { memberId, type, amount } = req.body;
-    
-    if (!['pokok', 'wajib', 'sukarela'].includes(type)) {
-      return res.status(400).json({ message: 'Tipe simpanan tidak valid' });
-    }
-
-    const query = `
-      INSERT INTO savings (member_id, ${type}) VALUES (?, ?)
-      ON DUPLICATE KEY UPDATE ${type} = ${type} + VALUES(${type})
-    `;
-    await db.query(query, [memberId, amount]);
-
-    res.json({ message: 'Setoran simpanan berhasil ditambahkan' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 5. PINJAMAN (LOANS)
-app.get(['/loans', '/api/loans', '*loans'], authenticateToken, async (req, res) => {
-  try {
-    const [rows] = await db.query(`
-      SELECT l.id, l.member_id AS memberId, m.nama, 
-             CAST(l.amount AS UNSIGNED) AS amount, 
-             l.tenor, 
-             CAST(l.monthly_installment AS UNSIGNED) AS monthly, 
-             CAST(l.remaining_amount AS UNSIGNED) AS remaining, 
-             l.status
-      FROM loans l
-      JOIN members m ON l.member_id = m.id
-      ORDER BY l.created_at DESC
-    `);
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post(['/loans', '/api/loans', '*loans'], authenticateToken, async (req, res) => {
-  try {
-    const { memberId, amount, tenor } = req.body;
-
-    const pokok = amount / tenor;
-    const bunga = amount * 0.01;
-    const monthly = Math.round(pokok + bunga);
-    const remaining = monthly * tenor;
-    const loanId = 'L-' + Date.now();
-
-    await db.query(`
-      INSERT INTO loans (id, member_id, amount, tenor, monthly_installment, remaining_amount, status)
-      VALUES (?, ?, ?, ?, ?, ?, 'APPROVED')
-    `, [loanId, memberId, amount, tenor, monthly, remaining]);
-
-    res.status(201).json({ message: 'Pengajuan pinjaman disetujui', loanId });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 6. PAYROLL DEDUCTION
-app.get(['/payrolls', '/api/payrolls', '*payrolls'], authenticateToken, async (req, res) => {
-  try {
-    const [rows] = await db.query(`
-      SELECT p.id, p.period, p.member_id AS memberId, m.nama, 
-             CAST(p.gaji_pokok AS UNSIGNED) AS gajiPokok,
-             CAST(p.pot_wajib AS UNSIGNED) AS potWajib, 
-             CAST(p.pot_cicilan AS UNSIGNED) AS potCicilan, 
-             CAST(p.total_potongan AS UNSIGNED) AS totalPotongan, 
-             CAST(p.gaji_bersih AS UNSIGNED) AS gajiBersih
-      FROM payrolls p
-      JOIN members m ON p.member_id = m.id
-      ORDER BY p.processed_at DESC
-    `);
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post(['/payrolls/process', '/api/payrolls/process', '*payrolls/process'], authenticateToken, async (req, res) => {
-  const connection = await db.getConnection();
-  try {
-    const { period } = req.body;
-    if (!period) return res.status(400).json({ message: 'Periode harus diisi' });
-
-    await connection.beginTransaction();
-
-    const [members] = await connection.query('SELECT id, gaji_pokok FROM members');
-    const wajibNominal = 100000;
-
-    for (const m of members) {
-      await connection.query(`
-        INSERT INTO savings (member_id, wajib) VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE wajib = wajib + VALUES(wajib)
-      `, [m.id, wajibNominal]);
-
-      const [loans] = await connection.query(
-        'SELECT id, monthly_installment, remaining_amount FROM loans WHERE member_id = ? AND remaining_amount > 0 AND status = "APPROVED" LIMIT 1',
-        [m.id]
-      );
-
-      let potCicilan = 0;
-      if (loans.length > 0) {
-        const activeLoan = loans[0];
-        potCicilan = Math.min(Number(activeLoan.monthly_installment), Number(activeLoan.remaining_amount));
-        const newRemaining = Number(activeLoan.remaining_amount) - potCicilan;
-        const newStatus = newRemaining <= 0 ? 'PAID_OFF' : 'APPROVED';
-
-        await connection.query(
-          'UPDATE loans SET remaining_amount = ?, status = ? WHERE id = ?',
-          [newRemaining, newStatus, activeLoan.id]
-        );
-      }
-
-      const totalPotongan = wajibNominal + potCicilan;
-      const gajiBersih = Number(m.gaji_pokok) - totalPotongan;
-
-      await connection.query(`
-        INSERT INTO payrolls (period, member_id, gaji_pokok, pot_wajib, pot_cicilan, total_potongan, gaji_bersih)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [period, m.id, m.gaji_pokok, wajibNominal, potCicilan, totalPotongan, gajiBersih]);
-    }
-
-    await connection.commit();
-    res.json({ message: `Pemotongan gaji periode ${period} berhasil diproses` });
-
-  } catch (error) {
-    await connection.rollback();
-    res.status(500).json({ error: error.message });
-  } finally {
-    connection.release();
-  }
-});
-
-// Fallback 404
-app.use((req, res) => {
-  res.status(404).json({ message: 'Endpoint tidak ditemukan.' });
-});
-
-// Global Error Handler
-app.use((err, req, res, next) => {
-  console.error('Server Error:', err);
-  res.status(500).json({ error: err.message || 'Terjadi kesalahan pada server.' });
-});
-
-// Endpoint Tambah Anggota & User Baru
 app.post('/api/members', async (req, res) => {
     const { nik, nama, dept, gaji_pokok, username, password, role } = req.body;
     
     try {
-        // Generate ID otomatis (misal: KOP-005, KOP-006, dst)
         const [rows] = await db.query('SELECT COUNT(*) as total FROM members');
         const nextIdNum = rows[0].total + 1;
         const id = `KOP-${String(nextIdNum).padStart(3, '0')}`;
 
-        // 1. Simpan ke tabel members
         await db.query(
             'INSERT INTO members (id, nik, nama, dept, gaji_pokok) VALUES (?, ?, ?, ?, ?)',
             [id, nik, nama, dept, gaji_pokok]
         );
 
-        // 2. Simpan ke tabel users untuk login
         await db.query(
             'INSERT INTO users (id, username, password, name, role) VALUES (?, ?, ?, ?, ?)',
             [id, username, password, nama, role || 'Karyawan / Anggota']
         );
 
-        // 3. Inisialisasi awal saldo simpanan (0) di tabel savings
         await db.query(
             'INSERT INTO savings (member_id, pokok, wajib, sukarela) VALUES (?, 0, 0, 0)',
             [id]
@@ -349,41 +177,47 @@ app.post('/api/members', async (req, res) => {
     }
 });
 
-// 1. Endpoint mendapatkan semua pengajuan pinjaman (Khusus Pengurus/Bendahara)
-app.get('/api/loans/pending', async (req, res) => {
-    try {
-        const [loans] = await db.query(`
-            SELECT l.id, l.member_id, m.nama, l.jumlah, l.tenor, l.status, l.created_at 
-            FROM loans l
-            JOIN members m ON l.member_id = m.id
-            WHERE l.status = 'Pending'
-            ORDER BY l.created_at ASC
-        `);
-        res.json({ success: true, data: loans });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
+// 3. SIMPANAN (SAVINGS)
+app.get(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT s.member_id AS memberId, m.nama, 
+             CAST(s.pokok AS UNSIGNED) AS pokok, 
+             CAST(s.wajib AS UNSIGNED) AS wajib, 
+             CAST(s.sukarela AS UNSIGNED) AS sukarela
+      FROM savings s
+      JOIN members m ON s.member_id = m.id
+    `);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// 2. Endpoint menyetujui atau menolak pinjaman
-app.post('/api/loans/approve', async (req, res) => {
-    const { loan_id, action } = req.body; // action: 'APPROVED' atau 'REJECTED'
+// 4. PINJAMAN (LOANS)
+app.get(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT l.id, l.member_id AS memberId, m.nama, 
+             CAST(l.amount AS UNSIGNED) AS amount, 
+             l.tenor, 
+             CAST(l.monthly_installment AS UNSIGNED) AS monthly, 
+             CAST(l.remaining_amount AS UNSIGNED) AS remaining, 
+             l.status
+      FROM loans l
+      JOIN members m ON l.member_id = m.id
+      ORDER BY l.created_at DESC
+    `);
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
-    if (!['APPROVED', 'REJECTED'].includes(action)) {
-        return res.status(400).json({ success: false, message: 'Aksi tidak valid' });
-    }
-
-    try {
-        const newStatus = action === 'APPROVED' ? 'Disetujui' : 'Ditolak';
-        await db.query('UPDATE loans SET status = ? WHERE id = ?', [newStatus, loan_id]);
-
-        res.json({ 
-            success: true, 
-            message: `Pengajuan pinjaman berhasil ${newStatus.toLowerCase()}!` 
-        });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Gagal memproses persetujuan: ' + error.message });
-    }
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error('Server Error:', err);
+  res.status(500).json({ error: err.message || 'Terjadi kesalahan pada server.' });
 });
 
 // Menjalankan listener lokal
