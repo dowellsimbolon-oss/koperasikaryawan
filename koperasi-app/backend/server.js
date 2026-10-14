@@ -66,12 +66,15 @@ app.post('/api/auth/login', handleLogin);
 async function handleLogin(req, res) {
   try {
     const { username, password } = req.body;
+    console.log("Mencoba login untuk username:", username);
+
     if (!username || !password) {
       return res.status(400).json({ message: 'Username dan password wajib diisi!' });
     }
 
     const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
-
+    console.log("Hasil query user dari DB:", rows);
+    
     if (rows.length === 0) {
       return res.status(400).json({ message: 'Username atau password salah!' });
     }
