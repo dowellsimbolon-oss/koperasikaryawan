@@ -123,9 +123,11 @@ if (formLogin) {
      const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ 
+        username: usernameInput, 
+        password: passwordInput 
+    })
 });
-
       const result = await response.json();
 
       if (response.ok) {
