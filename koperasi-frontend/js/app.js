@@ -110,56 +110,49 @@ function adjustUIByRole(loggedUser) {
 // Form Submit Login
 const formLogin = document.getElementById('form-login');
 if (formLogin) {
-  formLogin.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const usernameInput = document.getElementById('username').value.trim();
-    const passwordInput = document.getElementById('password').value.trim();
-    const errorMsg = document.getElementById('login-error');
+    formLogin.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const usernameInput = document.getElementById('username').value.trim();
+        const passwordInput = document.getElementById('password').value.trim();
+        const errorMsg = document.getElementById('login-error');
 
-    setButtonLoading('btn-login', 'btn-text', 'btn-spinner', true, 'Masuk/Sign');
-    if (errorMsg) errorMsg.style.display = 'none';
-
-    try {
-     const response = await fetch(`${API_BASE_URL}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ 
-        username: usernameInput, 
-        password: passwordInput 
-    })
-});
-      const result = await response.json();
-
-      if (response.ok) {
+        setButtonLoading('btn-login', 'btn-text', 'btn-spinner', true, 'Masuk/Sign');
         if (errorMsg) errorMsg.style.display = 'none';
-        localStorage.setItem('logged_user', JSON.stringify(result.user));
-        localStorage.setItem('token', result.token);
-        document.getElementById('username').value = '';
-        document.getElementById('password').value = '';
-        
-        // Arahkan otomatis berdasarkan role setelah login sukses
-        if (result.user.role && (result.user.role.toLowerCase().includes('bendahara') || result.user.role.toLowerCase().includes('pengurus') || result.user.role.toLowerCase().includes('admin'))) {
-          window.location.href = 'admin.html';
-        } else {
-          checkAuth();
-        }
-      } else {
-        if (errorMsg) {
-          errorMsg.innerText = result.error || result.message || 'Login gagal';
-          errorMsg.style.display = 'block';
-        }
-      }
-    } catch (error) {
-      if (errorMsg) {
-        errorMsg.innerText = 'Tidak dapat terhubung ke server backend!';
-        errorMsg.style.display = 'block';
-      }
-    } finally {
-      setButtonLoading('btn-login', 'btn-text', 'btn-spinner', false, 'Masuk/Sign');
-    }
-  });
-}
 
+        try {
+            const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: usernameInput,
+                    password: passwordInput
+                })
+            });
+
+            const result = await response.json();
+            
+            if (response.ok) {
+                // Simpan token dan redirect sesuai kebutuhan Anda
+                localStorage.setItem('token', result.token);
+                localStorage.setItem('user', JSON.stringify(result.user));
+                window.location.href = 'admin.html'; // Sesuaikan halaman tujuan setelah login
+            } else {
+                if (errorMsg) {
+                    errorMsg.textContent = result.message || 'Login gagal!';
+                    errorMsg.style.display = 'block';
+                }
+            }
+        } catch (error) {
+            console.error('Login Error:', error);
+            if (errorMsg) {
+                errorMsg.textContent = 'Terjadi kesalahan pada koneksi server.';
+                errorMsg.style.display = 'block';
+            }
+        } finally {
+            setButtonLoading('btn-login', 'btn-text', 'btn-spinner', false, 'Masuk/Sign');
+        }
+    });
+}
 // Handle Logout
 function handleLogout() {
   if (confirm('Apakah Anda yakin ingin keluar dari aplikasi?')) {
