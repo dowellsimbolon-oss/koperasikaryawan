@@ -59,6 +59,11 @@ app.get(['/', '/api'], (req, res) => {
   res.json({ message: 'API Backend Koperasi Berhasil Berjalan di Vercel!' });
 });
 
+// Daftarkan rute login
+app.post('/api/login', handleLogin);
+// atau jika menggunakan path auth:
+app.post('/api/auth/login', handleLogin);
+
 // Handler Logika Login
 const handleLogin = async (req, res) => {
   try {
