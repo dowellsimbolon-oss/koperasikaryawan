@@ -74,19 +74,24 @@ async function handleLogin(req, res) {
 
     const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
     console.log("Hasil query user dari DB:", rows);
-    
+
     if (rows.length === 0) {
       return res.status(400).json({ message: 'Username atau password salah!' });
     }
 
     const user = rows[0];
-   let isValidPass = false;
-if (user.password.startsWith('$2b$') || user.password.startsWith('$2a$')) {
-    isValidPass = await bcrypt.compare(password, user.password);
-} else {
-    isValidPass = (password === user.password);
-}
+   console.log("Data user ditemukan di DB:", user.username);
+    console.log("Password dari input user:", password);
+    console.log("Password dari database:", user.password);
 
+    let isValidPass = false;
+    if (user.password.startsWith('$2b$') || user.password.startsWith('$2a$')) {
+        isValidPass = await bcrypt.compare(password, user.password);
+    } else {
+        isValidPass = (password === user.password);
+    }
+
+    console.log("Hasil validasi password (isValidPass):", isValidPass);
 if (!isValidPass) {
     return res.status(400).json({ message: 'Username atau password salah!' });
 }
