@@ -1,5 +1,5 @@
 // --- KONFIGURASI API BACKEND ---
-const API_BASE_URL = 'koperasikaryawan-v3.vercel.app';
+const API_BASE_URL = 'koperasikaryawan-amos.vercel.app/api';
 
 // --- UTILS FORMATTER & HEADERS ---
 function formatRupiah(num) {
