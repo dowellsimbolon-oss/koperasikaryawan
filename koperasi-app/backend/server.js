@@ -65,7 +65,7 @@ app.post('/api/login', handleLogin);
 app.post('/api/auth/login', handleLogin);
 
 // Handler Logika Login
-const handleLogin = async (req, res) => {
+async function handleLogin(req, res) {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
