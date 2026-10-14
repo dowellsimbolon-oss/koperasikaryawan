@@ -679,3 +679,15 @@ async function handleLoanAction(loanId, action) {
 document.addEventListener('DOMContentLoaded', () => {
   checkAuth();
 });
+
+const btnLogout = document.getElementById('btn-logout');
+if (btnLogout) {
+    btnLogout.addEventListener('click', () => {
+        if (confirm('Apakah Anda yakin ingin keluar dari aplikasi?')) {
+            localStorage.removeItem('logged_user');
+            localStorage.removeItem('user');
+            localStorage.removeItem('token');
+            window.location.href = 'index.html';
+        }
+    });
+}
