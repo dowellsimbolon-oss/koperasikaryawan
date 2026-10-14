@@ -77,11 +77,16 @@ async function handleLogin(req, res) {
     }
 
     const user = rows[0];
-    const isValidPass = (password === user.password) || await bcrypt.compare(password, user.password);
+   let isValidPass = false;
+if (user.password.startsWith('$2b$') || user.password.startsWith('$2a$')) {
+    isValidPass = await bcrypt.compare(password, user.password);
+} else {
+    isValidPass = (password === user.password);
+}
 
-    if (!isValidPass) {
-      return res.status(400).json({ message: 'Username atau password salah!' });
-    }
+if (!isValidPass) {
+    return res.status(400).json({ message: 'Username atau password salah!' });
+}
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role, name: user.name },
