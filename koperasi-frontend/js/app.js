@@ -130,12 +130,12 @@ if (formLogin) {
             });
 
             const result = await response.json();
-            
+
             if (response.ok) {
-                // Simpan token dan redirect sesuai kebutuhan Anda
+                // Simpan token dan redirect setelah sukses login
                 localStorage.setItem('token', result.token);
-                localStorage.setItem('user', JSON.stringify(result.user));
-                window.location.href = 'admin.html'; // Sesuaikan halaman tujuan setelah login
+                localStorage.setItem('logged_user', JSON.stringify(result.user));
+                window.location.href = 'admin.html';
             } else {
                 if (errorMsg) {
                     errorMsg.textContent = result.message || 'Login gagal!';
@@ -156,8 +156,12 @@ if (formLogin) {
 // Handle Logout
 function handleLogout() {
   if (confirm('Apakah Anda yakin ingin keluar dari aplikasi?')) {
+    // Hapus kedua kunci agar bersih sempurna
     localStorage.removeItem('logged_user');
+    localStorage.removeItem('user');
     localStorage.removeItem('token');
+    
+    // Arahkan kembali ke halaman utama
     window.location.href = 'index.html';
   }
 }
