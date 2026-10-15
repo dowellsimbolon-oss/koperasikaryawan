@@ -1,5 +1,7 @@
-// --- KONFIGURASI API BACKEND ---
-const API_BASE_URL = 'https://koperasikaryawan-amos.vercel.app/api';
+/// --- KONFIGURASI API BACKEND ---
+const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://127.0.0.1:5000' 
+    : 'https://koperasikaryawan-amos.vercel.app'; 
 
 // --- UTILS FORMATTER & HEADERS ---
 function formatRupiah(num) {
@@ -76,7 +78,7 @@ function checkAuth() {
 
     renderAll();
   } else {
-    // Jika belum login dan tidak berada di halaman index/login, arahkan ke index.html
+    // Jika belum login dan berada di admin.html, arahkan ke index.html
     if (isAdminPage) {
       window.location.href = 'index.html';
       return;
@@ -97,7 +99,6 @@ function adjustUIByRole(loggedUser) {
   if (payrollActionSection) payrollActionSection.style.display = admin ? 'block' : 'none';
 
   const loanMemberSelect = document.getElementById('loan-member-id');
-  const savingsMemberSelect = document.getElementById('savings-member-id');
   
   if (!admin && loggedUser) {
     if (loanMemberSelect) {
@@ -110,58 +111,62 @@ function adjustUIByRole(loggedUser) {
 // Form Submit Login
 const formLogin = document.getElementById('form-login');
 if (formLogin) {
-    formLogin.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const usernameInput = document.getElementById('username').value.trim();
-        const passwordInput = document.getElementById('password').value.trim();
-        const errorMsg = document.getElementById('login-error');
+  formLogin.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const usernameInput = document.getElementById('username').value.trim();
+    const passwordInput = document.getElementById('password').value.trim();
+    const errorMsg = document.getElementById('login-error');
 
-        setButtonLoading('btn-login', 'btn-text', 'btn-spinner', true, 'Masuk/Sign');
-        if (errorMsg) errorMsg.style.display = 'none';
+    setButtonLoading('btn-login', 'btn-text', 'btn-spinner', true, 'Masuk/Sign');
+    if (errorMsg) errorMsg.style.display = 'none';
 
-        try {
-            const response = await fetch(`${API_BASE_URL}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    username: usernameInput,
-                    password: passwordInput
-                })
-            });
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: usernameInput,
+          password: passwordInput
+        })
+      });
 
-            const result = await response.json();
+      const result = await response.json();
 
-            if (response.ok) {
-                // Simpan token dan redirect setelah sukses login
-                localStorage.setItem('token', result.token);
-                localStorage.setItem('logged_user', JSON.stringify(result.user));
-                window.location.href = 'admin.html';
-            } else {
-                if (errorMsg) {
-                    errorMsg.textContent = result.message || 'Login gagal!';
-                    errorMsg.style.display = 'block';
-                }
-            }
-        } catch (error) {
-            console.error('Login Error:', error);
-            if (errorMsg) {
-                errorMsg.textContent = 'Terjadi kesalahan pada koneksi server.';
-                errorMsg.style.display = 'block';
-            }
-        } finally {
-            setButtonLoading('btn-login', 'btn-text', 'btn-spinner', false, 'Masuk/Sign');
+      if (response.ok) {
+        // Simpan token dan redirect setelah sukses login
+        localStorage.setItem('token', result.token);
+        localStorage.setItem('logged_user', JSON.stringify(result.user));
+
+        const role = (result.user.role || '').toLowerCase();
+        if (role.includes('bendahara') || role.includes('pengurus') || role.includes('admin')) {
+          window.location.href = 'admin.html';
+        } else {
+          window.location.href = 'index.html';
         }
-    });
+      } else {
+        if (errorMsg) {
+          errorMsg.textContent = result.message || 'Login gagal! Username atau password salah.';
+          errorMsg.style.display = 'block';
+        }
+      }
+    } catch (error) {
+      console.error('Login Error:', error);
+      if (errorMsg) {
+        errorMsg.textContent = 'Terjadi kesalahan pada koneksi server.';
+        errorMsg.style.display = 'block';
+      }
+    } finally {
+      setButtonLoading('btn-login', 'btn-text', 'btn-spinner', false, 'Masuk/Sign');
+    }
+  });
 }
+
 // Handle Logout
 function handleLogout() {
   if (confirm('Apakah Anda yakin ingin keluar dari aplikasi?')) {
-    // Hapus kedua kunci agar bersih sempurna
     localStorage.removeItem('logged_user');
     localStorage.removeItem('user');
     localStorage.removeItem('token');
-    
-    // Arahkan kembali ke halaman utama
     window.location.href = 'index.html';
   }
 }
@@ -188,9 +193,12 @@ async function renderDashboard() {
       const resSummary = await fetch(`${API_BASE_URL}/dashboard/summary`, { headers: getAuthHeaders() });
       if (resSummary.ok) {
         const summary = await resSummary.json();
-        document.getElementById('dash-total-savings').innerText = formatRupiah(summary.totalSavings);
-        document.getElementById('dash-total-loans').innerText = formatRupiah(summary.totalLoans);
-        document.getElementById('dash-total-members').innerText = `${summary.totalMembers} Karyawan`;
+        const elSavings = document.getElementById('dash-total-savings');
+        const elLoans = document.getElementById('dash-total-loans');
+        const elMembers = document.getElementById('dash-total-members');
+        if (elSavings) elSavings.innerText = formatRupiah(summary.totalSavings);
+        if (elLoans) elLoans.innerText = formatRupiah(summary.totalLoans);
+        if (elMembers) elMembers.innerText = `${summary.totalMembers} Karyawan`;
       }
 
       const resMembers = await fetch(`${API_BASE_URL}/members`, { headers: getAuthHeaders() });
@@ -227,9 +235,12 @@ async function renderDashboard() {
         const myLoan = loansList.find(l => (l.memberId === loggedUser.id || l.member_id === loggedUser.id)) || { remaining_amount: 0, remaining: 0 };
         const myRemainingLoan = Number(myLoan.remaining_amount || myLoan.remaining || 0);
 
-        document.getElementById('dash-total-savings').innerText = formatRupiah(myTotalSavings);
-        document.getElementById('dash-total-loans').innerText = formatRupiah(myRemainingLoan);
-        document.getElementById('dash-total-members').innerText = "Akun Pribadi";
+        const elSavings = document.getElementById('dash-total-savings');
+        const elLoans = document.getElementById('dash-total-loans');
+        const elMembers = document.getElementById('dash-total-members');
+        if (elSavings) elSavings.innerText = formatRupiah(myTotalSavings);
+        if (elLoans) elLoans.innerText = formatRupiah(myRemainingLoan);
+        if (elMembers) elMembers.innerText = "Akun Pribadi";
 
         const tbody = document.getElementById('member-list-tbody');
         if (tbody) {
@@ -547,18 +558,26 @@ if (formAddMember) {
   formAddMember.addEventListener('submit', async (e) => {
     e.preventDefault();
     
+    const submitBtn = formAddMember.querySelector('button[type="submit"]');
+    const originalBtnText = submitBtn ? submitBtn.textContent : 'Simpan Anggota Baru';
+
     const payload = {
-      nik: document.getElementById('new-nik').value,
-      nama: document.getElementById('new-nama').value,
-      dept: document.getElementById('new-dept').value,
-      gaji_pokok: document.getElementById('new-gaji').value,
-      username: document.getElementById('new-username').value,
+      nik: document.getElementById('new-nik').value.trim(),
+      nama: document.getElementById('new-nama').value.trim(),
+      dept: document.getElementById('new-dept').value.trim(),
+      gaji_pokok: Number(document.getElementById('new-gaji').value) || 0,
+      username: document.getElementById('new-username').value.trim(),
       password: document.getElementById('new-password').value,
       role: document.getElementById('new-role').value
     };
 
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Menyimpan...';
+    }
+
     try {
-      const res = await fetch(`${API_BASE_URL}/members`, {
+      const res = await fetch(`${API_BASE_URL}/api/members`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload)
@@ -586,13 +605,19 @@ if (formAddMember) {
         });
       }
     } catch (err) {
+      console.error('Error saat menambah anggota:', err);
       Swal.fire({
         title: 'Kesalahan!',
-        text: 'Terjadi kesalahan koneksi server',
+        text: 'Terjadi kesalahan koneksi server: ' + (err.message || ''),
         icon: 'error',
         confirmButtonText: 'OK',
         confirmButtonColor: '#dc2626'
       });
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalBtnText;
+      }
     }
   });
 }
@@ -682,8 +707,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
 const btnLogout = document.getElementById('btn-logout');
 if (btnLogout) {
-    btnLogout.addEventListener('click', () => {
-        if (confirm('Apakah Anda yakin ingin keluar dari aplikasi?')) {
+    btnLogout.addEventListener('click', (e) => {
+        e.preventDefault();
+        handleLogout();
+    });
+}
+
+// Definisikan fungsi handleLogout agar bisa dipanggil dari event listener maupun window
+function handleLogout() {
+    Swal.fire({
+        title: 'Keluar Aplikasi?',
+        text: 'Sesi Anda akan diakhiri, Anda harus login kembali untuk masuk.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626', // Warna merah untuk tombol konfirmasi
+        cancelButtonColor: '#4b5563',  // Warna abu-abu untuk tombol batal
+        confirmButtonText: 'Ya, Keluar',
+        cancelButtonText: 'Batal',
+        reverseButtons: true
+    }).then((result) => {
+        if (result.isConfirmed) {
             localStorage.removeItem('logged_user');
             localStorage.removeItem('user');
             localStorage.removeItem('token');
@@ -691,3 +734,9 @@ if (btnLogout) {
         }
     });
 }
+
+// Expose fungsi ke window untuk akses onclick di HTML
+window.handleLoanAction = handleLoanAction;
+window.processPayrollDeduction = processPayrollDeduction;
+window.calculateLoanPreview = calculateLoanPreview;
+window.handleLogout = handleLogout;

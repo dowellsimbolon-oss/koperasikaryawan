@@ -111,7 +111,7 @@ async function handleLogin(req, res) {
 }
 
 // Daftarkan rute login secara spesifik
-app.post(['/login', '/api/auth/login', '/api/login'], handleLogin);
+app.post(['/login', '/api/login', '/auth/login', '/api/auth/login'], handleLogin);
 
 // 1. DASHBOARD SUMMARY
 app.get(['/dashboard/summary', '/api/dashboard/summary'], async (req, res) => {
@@ -140,28 +140,57 @@ app.get(['/members', '/api/members'], authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/members', async (req, res) => {
+app.post(['/members', '/api/members'], authenticateToken, async (req, res) => {
     const { nik, nama, dept, gaji_pokok, username, password, role } = req.body;
     
+    // Validasi input wajib
+    if (!nik || !nama) {
+        return res.status(400).json({ success: false, message: 'NIK dan Nama wajib diisi!' });
+    }
+
+    const connection = await db.getConnection();
+
     try {
-        const [rows] = await db.query('SELECT COUNT(*) as total FROM members');
-        const nextIdNum = rows[0].total + 1;
+        await connection.beginTransaction();
+
+        // Ambil nomor ID terbesar secara numerik murni (mengabaikan string KOP-)
+        const [lastMember] = await connection.query(`
+            SELECT id FROM members 
+            WHERE id LIKE 'KOP-%' 
+            ORDER BY CAST(SUBSTRING(id, 5) AS UNSIGNED) DESC 
+            LIMIT 1
+        `);
+        
+        let nextIdNum = 1;
+
+        if (lastMember.length > 0) {
+            const lastId = lastMember[0].id; // Contoh: "KOP-007"
+            const numPart = parseInt(lastId.replace('KOP-', ''), 10);
+            if (!isNaN(numPart)) {
+                nextIdNum = numPart + 1;
+            }
+        }
         const id = `KOP-${String(nextIdNum).padStart(3, '0')}`;
 
-        await db.query(
+        // Simpan ke tabel members
+        await connection.query(
             'INSERT INTO members (id, nik, nama, dept, gaji_pokok) VALUES (?, ?, ?, ?, ?)',
             [id, nik, nama, dept, gaji_pokok]
         );
 
-        await db.query(
+        // Simpan ke tabel users
+        await connection.query(
             'INSERT INTO users (id, username, password, name, role) VALUES (?, ?, ?, ?, ?)',
             [id, username, password, nama, role || 'Karyawan / Anggota']
         );
 
-        await db.query(
+        // Simpan ke tabel savings
+        await connection.query(
             'INSERT INTO savings (member_id, pokok, wajib, sukarela) VALUES (?, 0, 0, 0)',
             [id]
         );
+
+        await connection.commit();
 
         res.status(201).json({ 
             success: true, 
@@ -169,11 +198,22 @@ app.post('/api/members', async (req, res) => {
             memberId: id 
         });
     } catch (error) {
-        console.error(error);
+        await connection.rollback();
+        console.error('TiDB Error:', error);
+
+        if (error.code === 'ER_DUP_ENTRY' || error.message.includes('Duplicate entry')) {
+            return res.status(400).json({ 
+                success: false, 
+                message: `NIK ${nik} sudah terdaftar di sistem!` 
+            });
+        }
+
         res.status(500).json({ 
             success: false, 
             message: 'Gagal menambahkan anggota: ' + error.message 
         });
+    } finally {
+        connection.release();
     }
 });
 
@@ -192,6 +232,61 @@ app.get(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// TAMBAHKAN RUTE POST UNTUK SIMPANAN INI:
+app.post(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
+    const { memberId, member_id, type, amount } = req.body;
+    const mId = memberId || member_id;
+
+    try {
+        if (!mId || !type || !amount) {
+            return res.status(400).json({ success: false, message: 'Data setoran simpanan tidak lengkap!' });
+        }
+
+        const numAmount = Number(amount);
+        let columnToUpdate = '';
+
+        // Tentukan kolom berdasarkan jenis simpanan (pokok / wajib / sukarela)
+        if (type.toLowerCase() === 'pokok') {
+            columnToUpdate = 'pokok';
+        } else if (type.toLowerCase() === 'wajib') {
+            columnToUpdate = 'wajib';
+        } else if (type.toLowerCase() === 'sukarela') {
+            columnToUpdate = 'sukarela';
+        } else {
+            return res.status(400).json({ success: false, message: 'Jenis simpanan tidak valid!' });
+        }
+
+        // Cek apakah data savings untuk member ini sudah ada
+        const [existing] = await db.query('SELECT * FROM savings WHERE member_id = ?', [mId]);
+
+        if (existing.length > 0) {
+            // Update dengan menambahkan nominal baru ke saldo sebelumnya
+            await db.query(
+                `UPDATE savings SET ${columnToUpdate} = ${columnToUpdate} + ? WHERE member_id = ?`,
+                [numAmount, mId]
+            );
+        } else {
+            // Jika belum ada baris sama sekali untuk member tersebut, buat baru
+            const initialPokok = columnToUpdate === 'pokok' ? numAmount : 0;
+            const initialWajib = columnToUpdate === 'wajib' ? numAmount : 0;
+            const initialSukarela = columnToUpdate === 'sukarela' ? numAmount : 0;
+
+            await db.query(
+                'INSERT INTO savings (member_id, pokok, wajib, sukarela) VALUES (?, ?, ?, ?)',
+                [mId, initialPokok, initialWajib, initialSukarela]
+            );
+        }
+
+        res.status(201).json({
+            success: true,
+            message: `Setoran simpanan ${type} sebesar Rp ${numAmount.toLocaleString('id-ID')} berhasil ditambahkan!`
+        });
+    } catch (error) {
+        console.error('Savings Error:', error);
+        res.status(500).json({ success: false, message: 'Gagal menyimpan setoran: ' + error.message });
+    }
 });
 
 // 4. PINJAMAN (LOANS)
@@ -214,6 +309,131 @@ app.get(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
   }
 });
 
+app.post(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
+    const { memberId, member_id, amount, tenor } = req.body;
+    const mId = memberId || member_id;
+
+    try {
+        if (!mId || !amount || !tenor) {
+            return res.status(400).json({ success: false, message: 'Data pinjaman tidak lengkap!' });
+        }
+
+        const numAmount = Number(amount);
+        const numTenor = Number(tenor);
+        
+        // Hitung cicilan per bulan (Pokok + Bunga 1%)
+        const principalPerMonth = numAmount / numTenor;
+        const interestPerMonth = numAmount * 0.01;
+        const monthlyInstallment = Math.round(principalPerMonth + interestPerMonth);
+        const totalRemaining = monthlyInstallment * numTenor;
+
+        // 1. Ambil jumlah total data pinjaman untuk membuat ID unik berikutnya (misal: L-001, L-002)
+        const [rows] = await db.query('SELECT COUNT(*) as total FROM loans');
+        const nextIdNum = rows[0].total + 1;
+        const loanId = `L-${String(nextIdNum).padStart(3, '0')}`;
+
+        // 2. Masukkan dengan menyertakan kolom id
+        await db.query(
+            'INSERT INTO loans (id, member_id, amount, tenor, monthly_installment, remaining_amount, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [loanId, mId, numAmount, numTenor, monthlyInstallment, totalRemaining, 'APPROVED']
+        );
+
+        res.status(201).json({
+            success: true,
+            message: 'Pengajuan pinjaman berhasil diajukan!'
+        });
+    } catch (error) {
+        console.error('Loan Error:', error);
+        res.status(500).json({ success: false, message: 'Gagal mengajukan pinjaman: ' + error.message });
+    }
+});
+
+// 5. PAYROLL DEDUCTION (POTONGAN GAJI)
+app.get(['/payrolls', '/api/payrolls', '/payroll-deductions', '/api/payroll-deductions'], authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT p.id, 
+             COALESCE(NULLIF(p.periode, ''), 'September 2026') AS periode,
+             COALESCE(NULLIF(p.periode, ''), 'September 2026') AS period, 
+             m.nama AS memberName, 
+             CAST(p.gaji_pokok AS UNSIGNED) AS gajiPokok,
+             CAST(p.pot_wajib AS UNSIGNED) AS potWajib,
+             CAST(p.pot_cicilan AS UNSIGNED) AS potCicilan,
+             CAST(p.total_potongan AS UNSIGNED) AS totalPotongan,
+             CAST(p.gaji_bersih AS UNSIGNED) AS gajiBersih
+      FROM payrolls p
+      JOIN members m ON p.member_id = m.id
+      ORDER BY p.id DESC
+    `);
+    res.json(rows);
+  } catch (error) {
+    res.json([]);
+  }
+});
+
+app.post([
+    '/payrolls', 
+    '/api/payrolls', 
+    '/payrolls/process', 
+    '/api/payrolls/process', 
+    '/payroll-deductions', 
+    '/api/payroll-deductions'
+], authenticateToken, async (req, res) => {
+    try {
+        const body = req.body || {};
+        const periode = body.periode || body.period || 'September 2026';
+        
+        const [members] = await db.query('SELECT id, gaji_pokok FROM members');
+        
+        if (!members || members.length === 0) {
+            return res.status(400).json({ success: false, message: 'Tidak ada data anggota untuk diproses!' });
+        }
+
+        const [countRes] = await db.query('SELECT COUNT(*) AS total FROM payrolls');
+        let baseCount = countRes[0]?.total ? Number(countRes[0].total) : 0;
+
+        for (const member of members) {
+            if (!member || !member.id) continue;
+
+            const memberId = String(member.id);
+            const gajiPokok = Number(member.gaji_pokok) || 0;
+            const potWajib = 50000; 
+            
+            const [loans] = await db.query('SELECT SUM(monthly_installment) as total_cicilan FROM loans WHERE member_id = ? AND status = "APPROVED"', [memberId]);
+            const potCicilan = Number(loans[0]?.total_cicilan) || 0;
+            
+            const totalPotongan = potWajib + potCicilan;
+            const gajiBersih = gajiPokok - totalPotongan;
+
+            baseCount++;
+            const payrollId = `PAY-${String(baseCount).padStart(3, '0')}`;
+
+            await db.query(
+                `INSERT INTO payrolls (id, member_id, periode, gaji_pokok, pot_wajib, pot_cicilan, total_potongan, gaji_bersih) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    payrollId, 
+                    memberId, 
+                    String(periode), 
+                    gajiPokok, 
+                    potWajib, 
+                    potCicilan, 
+                    totalPotongan, 
+                    gajiBersih
+                ]
+            );
+        }
+
+        res.status(201).json({ 
+            success: true, 
+            message: `Pemotongan gaji periode ${periode} berhasil dieksekusi!` 
+        });
+    } catch (error) {
+        console.error('Payroll Error:', error);
+        res.status(500).json({ success: false, message: 'Gagal memproses payroll: ' + error.message });
+    }
+});
+
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Server Error:', err);
@@ -222,7 +442,7 @@ app.use((err, req, res, next) => {
 
 // Menjalankan listener lokal
 if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
+  app.listen(PORT, '127.0.0.1', () => {
     console.log(`Server Backend Koperasi berjalan di http://localhost:${PORT}`);
   });
 }
