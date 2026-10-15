@@ -622,7 +622,7 @@ if (formAddMember) {
   });
 }
 
-// Fungsi memuat daftar pinjaman 'Pending'
+// 1. Fungsi memuat daftar pinjaman 'Pending' secara dinamis
 async function loadPendingLoans() {
   const tbody = document.getElementById('table-pending-loans');
   if (!tbody) return;
@@ -658,51 +658,47 @@ async function loadPendingLoans() {
   }
 }
 
-// Fungsi eksekusi persetujuan/penolakan
-async function handleLoanAction(loanId, action) {
-  const isApprove = action === 'APPROVED';
-  const confirmAction = await Swal.fire({
-    title: isApprove ? 'Setujui Pinjaman?' : 'Tolak Pinjaman?',
-    text: `Apakah Anda yakin ingin ${isApprove ? 'menyetujui' : 'menolak'} pengajuan ini?`,
-    icon: 'warning',
-    showCancelButton: true,
-    confirmButtonColor: isApprove ? '#059669' : '#dc2626',
-    cancelButtonColor: '#6b7280',
-    confirmButtonText: isApprove ? 'Ya, Setujui' : 'Ya, Tolak',
-    cancelButtonText: 'Batal'
-  });
+// 2. Fungsi Tombol Aksi (Setujui / Tolak) dengan pesan & endpoint yang benar
+async function handleLoanAction(loanId, actionStatus) {
+    const endpoint = actionStatus === 'APPROVED' ? 'approve' : 'reject';
+    const actionText = actionStatus === 'APPROVED' ? 'disetujui' : 'ditolak';
 
-  if (!confirmAction.isConfirmed) return;
+    try {
+        const res = await fetch(`${API_BASE_URL}/loans/${loanId}/${endpoint}`, {
+            method: 'POST',
+            headers: {
+                ...getAuthHeaders(),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id: loanId })
+        });
+        const result = await res.json();
 
-  try {
-    const res = await fetch(`${API_BASE_URL}/loans/approve`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ loan_id: loanId, action: action })
-    });
-
-    const result = await res.json();
-
-    if (res.ok) {
-      Swal.fire({
-        title: 'Berhasil!',
-        text: result.message || 'Status pinjaman diperbarui',
-        icon: 'success',
-        confirmButtonColor: '#1e3a8a'
-      });
-      await loadPendingLoans();
-      await renderAll();
-    } else {
-      Swal.fire('Gagal!', result.message || 'Terjadi kesalahan.', 'error');
+        if (result.success) {
+            alert(`Pengajuan pinjaman berhasil ${actionText}!`);
+            loadPendingLoans(); // Langsung refresh tabel seketika tanpa nunggu polling
+        } else {
+            alert('Gagal: ' + (result.message || 'Terjadi kesalahan'));
+        }
+    } catch (err) {
+        console.error('Error action loan:', err);
+        alert('Terjadi kesalahan koneksi server.');
     }
-  } catch (err) {
-    Swal.fire('Error!', 'Terjadi kesalahan koneksi server.', 'error');
-  }
 }
 
-// Initial Check Auth saat halaman dimuat
+
+// 3. Inisialisasi Halaman & Polling Real-Time setiap 3 Detik
 document.addEventListener('DOMContentLoaded', () => {
-  checkAuth();
+    if (typeof checkAuth === 'function') checkAuth();
+
+    if (typeof loadPendingLoans === 'function') {
+        loadPendingLoans(); // Muat data pertama kali saat halaman admin dibuka
+
+        // Polling otomatis setiap 3 detik agar data pinjaman terupdate secara real-time saat karyawan mengajukan pinjaman
+        setInterval(() => {
+            loadPendingLoans();
+        }, 3000);
+    }
 });
 
 const btnLogout = document.getElementById('btn-logout');

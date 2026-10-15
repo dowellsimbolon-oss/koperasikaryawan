@@ -309,8 +309,36 @@ app.get(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
   }
 });
 
+// Endpoint untuk mengambil daftar pinjaman yang menunggu persetujuan (PENDING)
+app.get(['/loans/pending', '/api/loans/pending'], authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT l.id, 
+             l.member_id AS memberId, 
+             m.nama AS nama, 
+             m.nama AS memberName, 
+             m.nik AS nik,
+             CAST(l.amount AS UNSIGNED) AS amount, 
+             l.tenor, 
+             CAST(l.monthly_installment AS UNSIGNED) AS monthlyInstallment,
+             CAST(l.monthly_installment AS UNSIGNED) AS monthly,
+             l.purpose, 
+             l.status
+      FROM loans l
+      JOIN members m ON l.member_id = m.id
+      WHERE l.status = 'PENDING'
+      ORDER BY l.id DESC
+    `);
+    res.json(rows);
+  } catch (error) {
+    console.error('Pending Loans Error:', error);
+    res.status(500).json([]);
+  }
+});
+
+// Karyawan mengajukan pinjaman (Status diset 'PENDING' / Menunggu Persetujuan)
 app.post(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
-    const { memberId, member_id, amount, tenor } = req.body;
+    const { memberId, member_id, amount, tenor, purpose } = req.body;
     const mId = memberId || member_id;
 
     try {
@@ -327,24 +355,120 @@ app.post(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
         const monthlyInstallment = Math.round(principalPerMonth + interestPerMonth);
         const totalRemaining = monthlyInstallment * numTenor;
 
-        // 1. Ambil jumlah total data pinjaman untuk membuat ID unik berikutnya (misal: L-001, L-002)
+        // Ambil jumlah total data pinjaman untuk membuat ID unik berikutnya
         const [rows] = await db.query('SELECT COUNT(*) as total FROM loans');
         const nextIdNum = rows[0].total + 1;
         const loanId = `L-${String(nextIdNum).padStart(3, '0')}`;
 
-        // 2. Masukkan dengan menyertakan kolom id
+        // Simpan dengan status 'PENDING' agar masuk ke antrean persetujuan admin/bendahara
         await db.query(
-            'INSERT INTO loans (id, member_id, amount, tenor, monthly_installment, remaining_amount, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [loanId, mId, numAmount, numTenor, monthlyInstallment, totalRemaining, 'APPROVED']
+            'INSERT INTO loans (id, member_id, amount, tenor, monthly_installment, remaining_amount, purpose, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [loanId, mId, numAmount, numTenor, monthlyInstallment, totalRemaining, purpose || 'Pinjaman Koperasi', 'PENDING']
         );
 
         res.status(201).json({
             success: true,
-            message: 'Pengajuan pinjaman berhasil diajukan!'
+            message: 'Pengajuan pinjaman berhasil dikirim dan menunggu persetujuan pengurus!'
         });
     } catch (error) {
         console.error('Loan Error:', error);
         res.status(500).json({ success: false, message: 'Gagal mengajukan pinjaman: ' + error.message });
+    }
+});
+
+// Endpoint untuk menyetujui (Approve) pinjaman via Request Body (POST /loans/approve)
+app.post(['/loans/approve', '/api/loans/approve'], authenticateToken, async (req, res) => {
+    try {
+        const loanId = req.body.id || req.body.loanId || req.body.loan_id;
+        if (!loanId) {
+            return res.status(400).json({ success: false, message: 'ID Pinjaman tidak disertakan!' });
+        }
+        
+        const [result] = await db.query(
+            `UPDATE loans SET status = 'APPROVED' WHERE id = ?`,
+            [loanId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'Data pinjaman tidak ditemukan!' });
+        }
+
+        res.json({ success: true, message: 'Pengajuan pinjaman berhasil disetujui!' });
+    } catch (error) {
+        console.error('Approve Loan Body Error:', error);
+        res.status(500).json({ success: false, message: 'Gagal menyetujui pinjaman: ' + error.message });
+    }
+});
+
+// Cadangan: Endpoint Approve via URL Parameter (/loans/:id/approve)
+app.all(['/loans/:id/approve', '/api/loans/:id/approve', '/loans/approve/:id', '/api/loans/approve/:id'], authenticateToken, async (req, res) => {
+    try {
+        const loanId = req.params.id;
+        if (!loanId) {
+            return res.status(400).json({ success: false, message: 'ID Pinjaman tidak valid!' });
+        }
+        
+        const [result] = await db.query(
+            `UPDATE loans SET status = 'APPROVED' WHERE id = ?`,
+            [loanId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'Data pinjaman tidak ditemukan!' });
+        }
+
+        res.json({ success: true, message: 'Pengajuan pinjaman berhasil disetujui!' });
+    } catch (error) {
+        console.error('Approve Loan Param Error:', error);
+        res.status(500).json({ success: false, message: 'Gagal menyetujui pinjaman: ' + error.message });
+    }
+});
+
+// Endpoint untuk menolak (Reject) pinjaman via Request Body
+app.post(['/loans/reject', '/api/loans/reject'], authenticateToken, async (req, res) => {
+    try {
+        const loanId = req.body.id || req.body.loanId || req.body.loan_id;
+        if (!loanId) {
+            return res.status(400).json({ success: false, message: 'ID Pinjaman tidak disertakan!' });
+        }
+        
+        const [result] = await db.query(
+            `UPDATE loans SET status = 'REJECTED' WHERE id = ?`,
+            [loanId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'Data pinjaman tidak ditemukan!' });
+        }
+
+        res.json({ success: true, message: 'Pengajuan pinjaman berhasil ditolak.' });
+    } catch (error) {
+        console.error('Reject Loan Error:', error);
+        res.status(500).json({ success: false, message: 'Gagal menolak pinjaman: ' + error.message });
+    }
+});
+
+// Cadangan: Endpoint Reject via URL Parameter
+app.all(['/loans/:id/reject', '/api/loans/:id/reject', '/loans/reject/:id', '/api/loans/reject/:id'], authenticateToken, async (req, res) => {
+    try {
+        const loanId = req.params.id;
+        if (!loanId) {
+            return res.status(400).json({ success: false, message: 'ID Pinjaman tidak valid!' });
+        }
+        
+        const [result] = await db.query(
+            `UPDATE loans SET status = 'REJECTED' WHERE id = ?`,
+            [loanId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'Data pinjaman tidak ditemukan!' });
+        }
+
+        res.json({ success: true, message: 'Pengajuan pinjaman berhasil ditolak.' });
+    } catch (error) {
+        console.error('Reject Loan Param Error:', error);
+        res.status(500).json({ success: false, message: 'Gagal menolak pinjaman: ' + error.message });
     }
 });
 
