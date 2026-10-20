@@ -477,9 +477,11 @@ app.get(['/payrolls', '/api/payrolls', '/payroll-deductions', '/api/payroll-dedu
   try {
     const [rows] = await db.query(`
       SELECT p.id, 
+             p.member_id AS memberId,
+             m.nama AS nama,
+             m.nama AS memberName, 
              COALESCE(NULLIF(p.periode, ''), 'September 2026') AS periode,
              COALESCE(NULLIF(p.periode, ''), 'September 2026') AS period, 
-             m.nama AS memberName, 
              CAST(p.gaji_pokok AS UNSIGNED) AS gajiPokok,
              CAST(p.pot_wajib AS UNSIGNED) AS potWajib,
              CAST(p.pot_cicilan AS UNSIGNED) AS potCicilan,

@@ -340,6 +340,18 @@ async function renderLoans() {
 
     dataToRender.forEach(l => {
       const remaining = Number(l.remaining_amount || l.remaining || 0);
+      
+      // Pengecekan status dari database (Ditolak, Pending, atau Aktif/Lunas)
+      let statusHtml = '';
+      if (l.status === 'REJECTED') {
+        statusHtml = `<span style="color: #dc2626; font-weight: 600;">DITOLAK</span>`; // Merah
+      } else if (l.status === 'PENDING') {
+        statusHtml = `<span style="color: #d97706; font-weight: 600;">PENDING</span>`; // Kuning/Oranye
+      } else {
+        statusHtml = `<span style="color: ${remaining === 0 ? '#16a34a' : '#d97706'}; font-weight: 600;">
+          ${remaining === 0 ? 'LUNAS' : 'AKTIF'}
+        </span>`; // Hijau untuk Lunas, Oranye untuk Aktif
+      }
       tbody.innerHTML += `
         <tr>
           <td>${l.nama || l.member_id || loggedUser.name} (${l.memberId || l.member_id || loggedUser.id})</td>
@@ -347,47 +359,12 @@ async function renderLoans() {
           <td>${l.tenor} Bln</td>
           <td>${formatRupiah(l.monthly_installment || l.monthly)}</td>
           <td>${formatRupiah(remaining)}</td>
-          <td><span style="color: ${remaining === 0 ? 'green' : 'orange'}; font-weight: 600;">
-            ${remaining === 0 ? 'LUNAS' : 'AKTIF'}
-          </span></td>
+          <td>${statusHtml}</td>
         </tr>
       `;
     });
   } catch (err) {
     console.error('Error rendering loans:', err);
-  }
-}
-
-async function renderPayroll() {
-  const admin = isAdminOrTreasurer();
-  const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
-
-  try {
-    const res = await fetch(`${API_BASE_URL}/payrolls`, { headers: getAuthHeaders() });
-    if (!res.ok) return;
-
-    const payrolls = await res.json();
-    const tbody = document.getElementById('payroll-tbody');
-    if (!tbody) return;
-
-    tbody.innerHTML = '';
-    const dataToRender = admin ? payrolls : payrolls.filter(p => p.memberId === loggedUser.id || p.member_id === loggedUser.id);
-
-    dataToRender.forEach(p => {
-      tbody.innerHTML += `
-        <tr>
-          <td><strong>${p.period}</strong></td>
-          <td>${p.nama || p.member_id || loggedUser.name} (${p.memberId || p.member_id || loggedUser.id})</td>
-          <td>${formatRupiah(p.gajiPokok || p.gaji_pokok)}</td>
-          <td>${formatRupiah(p.potWajib || p.pot_wajib)}</td>
-          <td>${formatRupiah(p.potCicilan || p.pot_cicilan)}</td>
-          <td><strong style="color: #dc2626;">${formatRupiah(p.totalPotongan || p.total_potongan)}</strong></td>
-          <td><strong style="color: #16a34a;">${formatRupiah(p.gajiBersih || p.gaji_bersih)}</strong></td>
-        </tr>
-      `;
-    });
-  } catch (err) {
-    console.error('Error rendering payroll:', err);
   }
 }
 
@@ -484,7 +461,6 @@ function calculateLoanPreview() {
 
   return totalCicilan;
 }
-
 const formLoan = document.getElementById('form-apply-loan');
 if (formLoan) {
   formLoan.addEventListener('submit', async function(e) {
@@ -505,15 +481,38 @@ if (formLoan) {
       });
 
       if (res.ok) {
-        alert('Pengajuan Pinjaman Berhasil!');
+        // Mengganti alert sukses dengan SweetAlert2
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            text: 'Pengajuan pinjaman berhasil dikirim dan menunggu persetujuan.',
+            timer: 2000,
+            showConfirmButton: false
+          });
+        } else {
+          alert('Pengajuan Pinjaman Berhasil!');
+        }
+
         document.getElementById('loan-amount').value = '';
         await renderAll();
       } else {
         const errData = await res.json();
-        alert(errData.message || 'Gagal mengajukan pinjaman');
+        const errorMsg = errData.message || 'Gagal mengajukan pinjaman';
+        
+        // Mengganti alert error dengan SweetAlert2
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({ icon: 'error', title: 'Gagal', text: errorMsg });
+        } else {
+          alert(errorMsg);
+        }
       }
     } catch (err) {
-      alert('Terjadi kesalahan koneksi server');
+      if (typeof Swal !== 'undefined') {
+        Swal.fire({ icon: 'error', title: 'Kesalahan Server', text: 'Terjadi kesalahan koneksi server' });
+      } else {
+        alert('Terjadi kesalahan koneksi server');
+      }
     } finally {
       setButtonLoading('btn-apply-loan', 'btn-apply-loan-text', 'btn-apply-loan-spinner', false, 'Ajukan Pinjaman');
     }
@@ -541,6 +540,7 @@ async function processPayrollDeduction() {
     const result = await res.json();
     if (res.ok) {
       alert(result.message);
+      await renderPayroll();
       await renderAll();
     } else {
       alert(result.message || 'Gagal memproses pemotongan gaji');
@@ -747,3 +747,12 @@ window.handleLoanAction = handleLoanAction;
 window.processPayrollDeduction = processPayrollDeduction;
 window.calculateLoanPreview = calculateLoanPreview;
 window.handleLogout = handleLogout;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const periodInput = document.getElementById('payroll-period');
+  if (periodInput) {
+    periodInput.addEventListener('change', () => {
+      renderPayroll(); // Otomatis merefresh tabel saat periode diubah
+    });
+  }
+});
