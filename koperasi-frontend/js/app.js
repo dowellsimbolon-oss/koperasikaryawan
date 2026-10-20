@@ -675,10 +675,21 @@ async function handleLoanAction(loanId, actionStatus) {
         const result = await res.json();
 
         if (result.success) {
-            alert(`Pengajuan pinjaman berhasil ${actionText}!`);
-            loadPendingLoans(); // Langsung refresh tabel seketika tanpa nunggu polling
+            // Notifikasi visual sukses dengan SweetAlert2
+            Swal.fire({
+                icon: 'success',
+                title: 'Berhasil!',
+                text: `Pengajuan pinjaman berhasil ${actionText}!`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+            loadPendingLoans(); // Refresh tabel seketika
         } else {
-            alert('Gagal: ' + (result.message || 'Terjadi kesalahan'));
+            Swal.fire({
+                icon: 'error',
+                title: 'Gagal',
+                text: result.message || 'Terjadi kesalahan'
+            });
         }
     } catch (err) {
         console.error('Error action loan:', err);
