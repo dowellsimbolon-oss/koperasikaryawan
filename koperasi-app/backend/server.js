@@ -309,6 +309,71 @@ app.get(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
   }
 });
 
+// Endpoint Proses Pemotongan Gaji Bulanan
+app.post(['/payrolls', '/payrolls/process', '/api/payrolls/process'], authenticateToken, async (req, res) => {
+  try {
+    const { period } = req.body;
+    if (!period) {
+      return res.status(400).json({ success: false, message: 'Periode pemotongan wajib diisi!' });
+    }
+
+    // 1. Ambil semua data anggota
+    const [members] = await db.query('SELECT id, nama, gaji_pokok, simpanan_wajib FROM members');
+
+    for (const member of members) {
+      // 2. Ambil total cicilan aktif pinjaman yang berstatus 'APPROVED'
+      const [loanRows] = await db.query(
+        "SELECT SUM(monthly_installment) as total_cicilan FROM loans WHERE member_id = ? AND status = 'APPROVED'",
+        [member.id]
+      );
+      const potCicilan = Number(loanRows[0].total_cicilan || 0);
+
+      const gajiPokok = Number(member.gaji_pokok || 0);
+      const potWajib = Number(member.simpanan_wajib || 0);
+      const totalPotongan = potWajib + potCicilan;
+      const gajiBersih = gajiPokok - totalPotongan;
+
+      // SOLUSI: Buat ID unik yang tetap berdasarkan ID Anggota dan Periode
+      // Contoh hasil: "PAY-KOP-009-2026-09"
+      const payrollId = `PAY-${member.id}-${period}`;
+
+      // 3. Simpan ke tabel payrolls
+      await db.query(
+        `INSERT INTO payrolls (id, member_id, periode, gaji_pokok, pot_wajib, pot_cicilan, total_potongan, gaji_bersih) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE 
+         gaji_pokok = VALUES(gaji_pokok), 
+         pot_wajib = VALUES(pot_wajib), 
+         pot_cicilan = VALUES(pot_cicilan), 
+         total_potongan = VALUES(total_potongan), 
+         gaji_bersih = VALUES(gaji_bersih)`,
+        [payrollId, member.id, period, gajiPokok, potWajib, potCicilan, totalPotongan, gajiBersih]
+      );
+    }
+
+    res.json({ success: true, message: `Pemotongan gaji untuk periode ${period} berhasil diproses!` });
+  } catch (error) {
+    console.error('Payroll Process Error:', error);
+    res.status(500).json({ success: false, message: 'Gagal memproses pemotongan gaji: ' + error.message });
+  }
+});
+
+// Endpoint untuk mengambil daftar data payroll (GET)
+app.get(['/payroll', '/payrolls', '/api/payroll', '/api/payrolls'], authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT p.*, m.nama AS nama, m.nama AS member_name 
+      FROM payrolls p 
+      JOIN members m ON p.member_id = m.id 
+      ORDER BY p.periode DESC
+    `);
+    res.json(rows);
+  } catch (error) {
+    console.error('Get Payrolls Error:', error);
+    res.status(500).json([]);
+  }
+});
+
 // Endpoint untuk mengambil daftar pinjaman yang menunggu persetujuan (PENDING)
 app.get(['/loans/pending', '/api/loans/pending'], authenticateToken, async (req, res) => {
   try {
@@ -497,67 +562,61 @@ app.get(['/payrolls', '/api/payrolls', '/payroll-deductions', '/api/payroll-dedu
   }
 });
 
+// Endpoint Proses Pemotongan Gaji Bulanan (Sinkron dengan Unique Key)
 app.post([
-    '/payrolls', 
-    '/api/payrolls', 
-    '/payrolls/process', 
-    '/api/payrolls/process', 
-    '/payroll-deductions', 
-    '/api/payroll-deductions'
+  '/payrolls',
+  '/api/payrolls',
+  '/payrolls/process',
+  '/api/payrolls/process',
+  '/payroll-deductions',
+  '/api/payroll-deductions'
 ], authenticateToken, async (req, res) => {
-    try {
-        const body = req.body || {};
-        const periode = body.periode || body.period || 'September 2026';
-        
-        const [members] = await db.query('SELECT id, gaji_pokok FROM members');
-        
-        if (!members || members.length === 0) {
-            return res.status(400).json({ success: false, message: 'Tidak ada data anggota untuk diproses!' });
-        }
-
-        const [countRes] = await db.query('SELECT COUNT(*) AS total FROM payrolls');
-        let baseCount = countRes[0]?.total ? Number(countRes[0].total) : 0;
-
-        for (const member of members) {
-            if (!member || !member.id) continue;
-
-            const memberId = String(member.id);
-            const gajiPokok = Number(member.gaji_pokok) || 0;
-            const potWajib = 50000; 
-            
-            const [loans] = await db.query('SELECT SUM(monthly_installment) as total_cicilan FROM loans WHERE member_id = ? AND status = "APPROVED"', [memberId]);
-            const potCicilan = Number(loans[0]?.total_cicilan) || 0;
-            
-            const totalPotongan = potWajib + potCicilan;
-            const gajiBersih = gajiPokok - totalPotongan;
-
-            baseCount++;
-            const payrollId = `PAY-${String(baseCount).padStart(3, '0')}`;
-
-            await db.query(
-                `INSERT INTO payrolls (id, member_id, periode, gaji_pokok, pot_wajib, pot_cicilan, total_potongan, gaji_bersih) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    payrollId, 
-                    memberId, 
-                    String(periode), 
-                    gajiPokok, 
-                    potWajib, 
-                    potCicilan, 
-                    totalPotongan, 
-                    gajiBersih
-                ]
-            );
-        }
-
-        res.status(201).json({ 
-            success: true, 
-            message: `Pemotongan gaji periode ${periode} berhasil dieksekusi!` 
-        });
-    } catch (error) {
-        console.error('Payroll Error:', error);
-        res.status(500).json({ success: false, message: 'Gagal memproses payroll: ' + error.message });
+  try {
+    const body = req.body || {};
+    const periode = body.periode || body.period;
+    
+    if (!periode) {
+      return res.status(400).json({ success: false, message: 'Periode pemotongan wajib diisi!' });
     }
+
+    // 1. Ambil data master anggota (gaji pokok & simpanan wajib)
+    const [members] = await db.query('SELECT id, gaji_pokok, simpanan_wajib FROM members');
+
+    for (const member of members) {
+      // 2. Jumlahkan cicilan aktif pinjaman yang berstatus 'APPROVED'
+      const [loanRows] = await db.query(
+        "SELECT SUM(monthly_installment) as total_cicilan FROM loans WHERE member_id = ? AND status = 'APPROVED'",
+        [member.id]
+      );
+      const potCicilan = Number(loanRows[0].total_cicilan || 0);
+
+      const gajiPokok = Number(member.gaji_pokok || 0);
+      const potWajib = Number(member.simpanan_wajib || 0);
+      const totalPotongan = potWajib + potCicilan;
+      const gajiBersih = gajiPokok - totalPotongan;
+
+      // 3. Buat ID unik berbasis member dan periode agar konsisten
+      const payrollId = `PAY-${member.id}-${periode.replace(/\s+/g, '-')}`;
+
+      // 4. Simpan data baru atau update otomatis jika kombinasi member_id & periode sudah ada
+      await db.query(
+        `INSERT INTO payrolls (id, member_id, periode, gaji_pokok, pot_wajib, pot_cicilan, total_potongan, gaji_bersih) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE 
+         gaji_pokok = VALUES(gaji_pokok), 
+         pot_wajib = VALUES(pot_wajib), 
+         pot_cicilan = VALUES(pot_cicilan), 
+         total_potongan = VALUES(total_potongan), 
+         gaji_bersih = VALUES(gaji_bersih)`,
+        [payrollId, member.id, periode, gajiPokok, potWajib, potCicilan, totalPotongan, gajiBersih]
+      );
+    }
+
+    res.json({ success: true, message: `Pemotongan gaji untuk periode ${periode} berhasil diproses dan diperbarui!` });
+  } catch (error) {
+    console.error('Payroll Process Error:', error);
+    res.status(500).json({ success: false, message: 'Gagal memproses pemotongan gaji: ' + error.message });
+  }
 });
 
 // Global Error Handler

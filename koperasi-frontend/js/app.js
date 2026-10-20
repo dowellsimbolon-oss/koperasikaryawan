@@ -324,8 +324,8 @@ async function renderSavings() {
 }
 
 async function renderLoans() {
-  const admin = isAdminOrTreasurer();
-  const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
+  const admin = typeof isAdminOrTreasurer === 'function' ? isAdminOrTreasurer() : true;
+  const loggedUser = JSON.parse(localStorage.getItem('logged_user')) || {};
 
   try {
     const res = await fetch(`${API_BASE_URL}/loans`, { headers: getAuthHeaders() });
@@ -336,35 +336,162 @@ async function renderLoans() {
     if (!tbody) return;
 
     tbody.innerHTML = '';
-    const dataToRender = admin ? loans : loans.filter(l => l.memberId === loggedUser.id || l.member_id === loggedUser.id);
+    const dataToRender = admin ? loans : loans.filter(l => (l.memberId === loggedUser.id || l.member_id === loggedUser.id));
+
+    if (dataToRender.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">Belum ada data pinjaman.</td></tr>`;
+      return;
+    }
 
     dataToRender.forEach(l => {
       const remaining = Number(l.remaining_amount || l.remaining || 0);
+      const statusValue = (l.status || '').toUpperCase();
       
-      // Pengecekan status dari database (Ditolak, Pending, atau Aktif/Lunas)
       let statusHtml = '';
-      if (l.status === 'REJECTED') {
-        statusHtml = `<span style="color: #dc2626; font-weight: 600;">DITOLAK</span>`; // Merah
-      } else if (l.status === 'PENDING') {
-        statusHtml = `<span style="color: #d97706; font-weight: 600;">PENDING</span>`; // Kuning/Oranye
+      let remainingDisplay = formatRupiah(remaining);
+
+      if (statusValue === 'REJECTED' || statusValue === 'DITOLAK') {
+        statusHtml = `<span style="color: #dc2626; font-weight: 600;">DITOLAK</span>`;
+        remainingDisplay = '-'; // Sisa tagihan dikosongkan/strip jika ditolak
+      } else if (statusValue === 'PENDING') {
+        statusHtml = `<span style="color: #d97706; font-weight: 600;">PENDING</span>`;
       } else {
         statusHtml = `<span style="color: ${remaining === 0 ? '#16a34a' : '#d97706'}; font-weight: 600;">
           ${remaining === 0 ? 'LUNAS' : 'AKTIF'}
-        </span>`; // Hijau untuk Lunas, Oranye untuk Aktif
+        </span>`;
       }
+
+      const namaPeminjam = l.nama || l.member_name || loggedUser.name || 'Anggota';
+      const idPeminjam = l.memberId || l.member_id || loggedUser.id || '-';
+
       tbody.innerHTML += `
-        <tr>
-          <td>${l.nama || l.member_id || loggedUser.name} (${l.memberId || l.member_id || loggedUser.id})</td>
-          <td>${formatRupiah(l.amount)}</td>
-          <td>${l.tenor} Bln</td>
-          <td>${formatRupiah(l.monthly_installment || l.monthly)}</td>
-          <td>${formatRupiah(remaining)}</td>
-          <td>${statusHtml}</td>
+        <tr class="border-b border-slate-100">
+          <td class="p-3.5">${namaPeminjam} (${idPeminjam})</td>
+          <td class="p-3.5">${formatRupiah(l.amount || l.jumlah || 0)}</td>
+          <td class="p-3.5">${l.tenor || 0} Bln</td>
+          <td class="p-3.5">${formatRupiah(l.monthly_installment || l.monthly || 0)}</td>
+          <td class="p-3.5 font-medium">${remainingDisplay}</td>
+          <td class="p-3.5">${statusHtml}</td>
         </tr>
       `;
     });
   } catch (err) {
     console.error('Error rendering loans:', err);
+  }
+}
+
+async function renderPayroll() {
+  const admin = typeof isAdminOrTreasurer === 'function' ? isAdminOrTreasurer() : false;
+  const loggedUser = JSON.parse(localStorage.getItem('logged_user')) || {};
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/payroll`, { headers: getAuthHeaders() });
+    if (!res.ok) return;
+
+    let payrolls = await res.json();
+    const tbody = document.getElementById('payroll-tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+    
+    // 1. Filter hak akses
+    let dataToRender = admin 
+      ? payrolls 
+      : payrolls.filter(p => p.member_id === loggedUser.id || p.id === loggedUser.id);
+
+    // 2. KHUSUS ADMIN: Filter tabel agar hanya menampilkan periode yang sedang dipilih di form
+    if (admin) {
+      const periodInput = document.getElementById('payroll-period');
+      if (periodInput && periodInput.value) {
+        const selectedPeriod = periodInput.value; // contoh: "2026-11"
+        dataToRender = dataToRender.filter(p => (p.periode || p.period) === selectedPeriod);
+      }
+    }
+
+    // Deduplikasi data
+    const uniqueMap = new Map();
+    dataToRender.forEach(p => {
+      const key = `${p.member_id}-${p.periode || p.period}`;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, p);
+      }
+    });
+    dataToRender = Array.from(uniqueMap.values());
+
+    if (dataToRender.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-400">Belum ada data slip gaji untuk periode ini.</td></tr>`;
+      return;
+    }
+
+    dataToRender.forEach(p => {
+      const periodeDisplay = p.periode || p.period || '-';
+      const namaAnggota = p.nama || p.member_name || '-';
+      const gajiPokok = Number(p.gaji_pokok || 0);
+      const potWajib = Number(p.pot_wajib || p.potongan_wajib || 0);
+      const potCicilan = Number(p.pot_cicilan || p.potongan_cicilan || 0);
+      const totalPotongan = Number(p.total_potongan || (potWajib + potCicilan));
+      const gajiBersih = Number(p.gaji_bersih || (gajiPokok - totalPotongan));
+
+      tbody.innerHTML += `
+        <tr class="border-b border-slate-100 hover:bg-slate-50">
+          <td class="p-3.5 font-medium">${periodeDisplay}</td>
+          <td class="p-3.5">${namaAnggota}</td>
+          <td class="p-3.5">${formatRupiah(gajiPokok)}</td>
+          <td class="p-3.5">${formatRupiah(potWajib)}</td>
+          <td class="p-3.5">${formatRupiah(potCicilan)}</td>
+          <td class="p-3.5 font-medium">${formatRupiah(totalPotongan)}</td>
+          <td class="p-3.5 font-bold text-blue-900">${formatRupiah(gajiBersih)}</td>
+        </tr>
+      `;
+    });
+  } catch (err) {
+    console.error('Error rendering payroll:', err);
+  }
+}
+
+// Tambahkan pemantau agar tabel otomatis ikut berubah saat bulan di form diganti
+document.addEventListener('DOMContentLoaded', () => {
+  const periodInput = document.getElementById('payroll-period');
+  if (periodInput) {
+    periodInput.addEventListener('change', () => {
+      renderPayroll();
+    });
+  }
+});
+
+async function triggerProcessPayroll() {
+  // 1. Ambil nilai dari input dengan id="payroll-period" yang ada di HTML Anda
+  const periodInput = document.getElementById('payroll-period');
+  const selectedPeriod = periodInput ? periodInput.value : '';
+
+  if (!selectedPeriod) {
+    alert('Silakan pilih periode pemotongan terlebih dahulu!');
+    return;
+  }
+
+  try {
+    // 2. Kirim nilai periode tersebut (format: "2026-09") ke backend
+    const res = await fetch(`${API_BASE_URL}/payrolls/process`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ period: selectedPeriod })
+    });
+
+    const result = await res.json();
+    
+    if (res.ok && result.success) {
+      alert(result.message);
+      // 3. Muat ulang tabel agar data periode yang baru langsung tampil
+      renderPayroll(); 
+    } else {
+      alert(result.message || 'Gagal memproses pemotongan gaji.');
+    }
+  } catch (err) {
+    console.error('Error processing payroll:', err);
+    alert('Terjadi kesalahan koneksi server.');
   }
 }
 
@@ -520,33 +647,93 @@ if (formLoan) {
 }
 
 async function processPayrollDeduction() {
-  if (!isAdminOrTreasurer()) return alert('Akses ditolak. Fitur ini khusus Pengurus/Bendahara.');
+  if (!isAdminOrTreasurer()) {
+    return Swal.fire({
+      title: 'Akses Ditolak',
+      text: 'Fitur ini khusus Pengurus/Bendahara.',
+      icon: 'error',
+      confirmButtonColor: '#10B981'
+    });
+  }
 
+  // Ambil elemen input periode secara langsung saat tombol diklik
   const periodInput = document.getElementById('payroll-period');
-  const period = periodInput ? periodInput.value : '';
-  if (!period) return alert('Pilih periode pemotongan terlebih dahulu!');
+  if (!periodInput) {
+    return Swal.fire({
+      title: 'Error',
+      text: 'Elemen input periode tidak ditemukan!',
+      icon: 'error',
+      confirmButtonColor: '#10B981'
+    });
+  }
 
-  if (!confirm(`Proses pemotongan gaji untuk periode ${period}?`)) return;
+  let period = periodInput.value;
+  
+  // Validasi jika input kosong
+  if (!period) {
+    return Swal.fire({
+      title: 'Peringatan',
+      text: 'Silakan pilih periode pemotongan terlebih dahulu!',
+      icon: 'warning',
+      confirmButtonColor: '#10B981'
+    });
+  }
+
+  // Pastikan format periode bersih (misal: "2026-09")
+  // Jika input bertipe 'month' mengembalikan format YYYY-MM, kita gunakan langsung
+  console.log("PERIODE YANG DIPILIH DI FORM:", period);
+
+  const confirmResult = await Swal.fire({
+    title: 'Konfirmasi Pemotongan Gaji',
+    text: `Proses pemotongan gaji untuk periode ${period}?`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#10B981',
+    cancelButtonColor: '#EF4444',
+    confirmButtonText: 'Ya, Lanjutkan',
+    cancelButtonText: 'Batal'
+  });
+
+  if (!confirmResult.isConfirmed) return;
 
   setButtonLoading('btn-process-payroll', 'btn-process-payroll-text', 'btn-process-payroll-spinner', true, 'Proses Potong Gaji');
 
   try {
     const res = await fetch(`${API_BASE_URL}/payrolls/process`, {
       method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ period })
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({ period: period })
     });
 
     const result = await res.json();
-    if (res.ok) {
-      alert(result.message);
-      await renderPayroll();
+    if (res.ok && result.success) {
+      await Swal.fire({
+        title: 'Berhasil!',
+        text: result.message || `Pemotongan gaji untuk periode ${period} berhasil diproses!`,
+        icon: 'success',
+        confirmButtonColor: '#10B981'
+      });
+      await renderPayroll(); 
       await renderAll();
     } else {
-      alert(result.message || 'Gagal memproses pemotongan gaji');
+      await Swal.fire({
+        title: 'Gagal',
+        text: result.message || 'Gagal memproses pemotongan gaji',
+        icon: 'error',
+        confirmButtonColor: '#10B981'
+      });
     }
   } catch (err) {
-    alert('Terjadi kesalahan koneksi server');
+    console.error('Process Payroll Error:', err);
+    await Swal.fire({
+      title: 'Kesalahan Koneksi',
+      text: 'Terjadi kesalahan koneksi server',
+      icon: 'error',
+      confirmButtonColor: '#10B981'
+    });
   } finally {
     setButtonLoading('btn-process-payroll', 'btn-process-payroll-text', 'btn-process-payroll-spinner', false, 'Proses Potong Gaji');
   }
