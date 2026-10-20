@@ -291,35 +291,70 @@ async function renderOptions() {
   }
 }
 
+let isFetchingSavings = false;
+
 async function renderSavings() {
-  const admin = isAdminOrTreasurer();
-  const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
+  if (isFetchingSavings) return;
+  isFetchingSavings = true;
+
+  const admin = typeof isAdminOrTreasurer === 'function' ? isAdminOrTreasurer() : false;
+  const loggedUser = JSON.parse(localStorage.getItem('logged_user')) || {};
+
+  const tbody = document.getElementById('savings-tbody');
+  if (!tbody) {
+    isFetchingSavings = false;
+    return;
+  }
 
   try {
     const res = await fetch(`${API_BASE_URL}/savings`, { headers: getAuthHeaders() });
-    if (!res.ok) return;
+    if (!res.ok) {
+      isFetchingSavings = false;
+      return;
+    }
 
-    const savings = await res.json();
-    const tbody = document.getElementById('savings-tbody');
-    if (!tbody) return;
+    const result = await res.json();
+    
+    // Amankan pengambilan data apakah berupa Array langsung atau terbungkus di dalam object .data
+    const savingsArray = Array.isArray(result) ? result : (result.success && Array.isArray(result.data) ? result.data : []);
 
     tbody.innerHTML = '';
-    const dataToRender = admin ? savings : savings.filter(s => s.memberId === loggedUser.id || s.member_id === loggedUser.id || s.id === loggedUser.id);
+    
+    const dataToRender = admin 
+      ? savingsArray 
+      : savingsArray.filter(s => String(s.memberId || s.member_id || s.id) === String(loggedUser.id));
+
+    if (dataToRender.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Belum ada data simpanan.</td></tr>`;
+      isFetchingSavings = false;
+      return;
+    }
 
     dataToRender.forEach(s => {
-      const total = (Number(s.pokok) || 0) + (Number(s.wajib) || 0) + (Number(s.sukarela) || 0);
+      // Antisipasi perbedaan nama kolom di database (pokok vs simpanan_pokok, dll)
+      const pokok = Number(s.pokok || s.simpanan_pokok || 0);
+      const wajib = Number(s.wajib || s.simpanan_wajib || 0);
+      const sukarela = Number(s.sukarela || s.simpanan_sukarela || 0);
+      const total = pokok + wajib + sukarela;
+
+      const namaAnggota = s.nama || s.member_name || loggedUser.nama || '-';
+      const idAnggota = s.memberId || s.member_id || s.id || loggedUser.id || '-';
+
       tbody.innerHTML += `
-        <tr>
-          <td>${s.nama || s.member_id || loggedUser.name} (${s.memberId || s.member_id || loggedUser.id})</td>
-          <td>${formatRupiah(s.pokok)}</td>
-          <td>${formatRupiah(s.wajib)}</td>
-          <td>${formatRupiah(s.sukarela)}</td>
-          <td><strong style="color: #16a34a;">${formatRupiah(total)}</strong></td>
+        <tr class="border-b border-slate-100 hover:bg-slate-50">
+          <td class="p-3.5 font-medium">${namaAnggota} <span class="text-xs text-slate-400">(${idAnggota})</span></td>
+          <td class="p-3.5">${formatRupiah(pokok)}</td>
+          <td class="p-3.5">${formatRupiah(wajib)}</td>
+          <td class="p-3.5">${formatRupiah(sukarela)}</td>
+          <td class="p-3.5"><strong class="text-emerald-600">${formatRupiah(total)}</strong></td>
         </tr>
       `;
     });
   } catch (err) {
     console.error('Error rendering savings:', err);
+    tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-400">Gagal memuat data simpanan.</td></tr>`;
+  } finally {
+    isFetchingSavings = false;
   }
 }
 
@@ -810,39 +845,47 @@ if (formAddMember) {
 }
 
 // 1. Fungsi memuat daftar pinjaman 'Pending' secara dinamis
+let isFetchingLoans = false;
+
 async function loadPendingLoans() {
-  const tbody = document.getElementById('table-pending-loans');
-  if (!tbody) return;
+    if (isFetchingLoans) return;
+    isFetchingLoans = true;
 
-  try {
-    const res = await fetch(`${API_BASE_URL}/loans/pending`, { headers: getAuthHeaders() });
-    const result = await res.json();
-
-    const dataLoans = result.success ? result.data : (Array.isArray(result) ? result : []);
-
-    if (dataLoans.length > 0) {
-      tbody.innerHTML = dataLoans.map(loan => `
-        <tr class="border-b hover:bg-gray-50">
-          <td class="p-3 font-medium">${loan.member_id || loan.memberId}</td>
-          <td class="p-3">${loan.nama || '-'}</td>
-          <td class="p-3 font-semibold text-blue-900">Rp ${Number(loan.jumlah || loan.amount).toLocaleString('id-ID')}</td>
-          <td class="p-3">${loan.tenor} Bulan</td>
-          <td class="p-3 text-center space-x-2">
-            <button onclick="handleLoanAction('${loan.id}', 'APPROVED')" class="bg-emerald-600 text-white px-3 py-1 rounded-md text-sm hover:bg-emerald-700 transition">
-              Setujui
-            </button>
-            <button onclick="handleLoanAction('${loan.id}', 'REJECTED')" class="bg-rose-600 text-white px-3 py-1 rounded-md text-sm hover:bg-rose-700 transition">
-              Tolak
-            </button>
-          </td>
-        </tr>
-      `).join('');
-    } else {
-      tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Tidak ada pengajuan pinjaman baru.</td></tr>`;
+    const tbody = document.getElementById('table-pending-loans');
+    if (!tbody) {
+        isFetchingLoans = false;
+        return;
     }
-  } catch (err) {
-    console.error('Gagal memuat daftar pinjaman:', err);
-  }
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/loans/pending`, { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error('Gagal mengambil data pinjaman');
+        
+        const result = await res.json();
+        const dataLoans = result.success ? result.data : (Array.isArray(result) ? result : []);
+
+        if (dataLoans.length > 0) {
+            tbody.innerHTML = dataLoans.map(loan => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="p-3 font-medium">${loan.member_id || loan.memberId || '-'}</td>
+                    <td class="p-3">${loan.nama || '-'}</td>
+                    <td class="p-3 font-semibold text-blue-900">Rp ${Number(loan.jumlah || loan.amount || 0).toLocaleString('id-ID')}</td>
+                    <td class="p-3">${loan.tenor || 0} Bulan</td>
+                    <td class="p-3 text-center space-x-2">
+                        <button onclick="handleLoanAction('${loan.id}', 'APPROVED')" class="bg-emerald-600 text-white px-3 py-1 rounded hover:bg-emerald-700">Setujui</button>
+                        <button onclick="handleLoanAction('${loan.id}', 'REJECTED')" class="bg-rose-600 text-white px-3 py-1 rounded hover:bg-rose-700">Tolak</button>
+                    </td>
+                </tr>
+            `).join('');
+        } else {
+            tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Tidak ada pengajuan pinjaman pending.</td></tr>`;
+        }
+    } catch (err) {
+        console.error('Error loading pending loans:', err);
+        tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-400">Gagal memuat data pinjaman.</td></tr>`;
+    } finally {
+        isFetchingLoans = false;
+    }
 }
 
 // 2. Fungsi Tombol Aksi (Setujui / Tolak) dengan pesan & endpoint yang benar
@@ -892,10 +935,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof loadPendingLoans === 'function') {
         loadPendingLoans(); // Muat data pertama kali saat halaman admin dibuka
 
-        // Polling otomatis setiap 3 detik agar data pinjaman terupdate secara real-time saat karyawan mengajukan pinjaman
-        setInterval(() => {
-            loadPendingLoans();
-        }, 3000);
     }
 });
 
