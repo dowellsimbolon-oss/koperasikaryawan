@@ -16,7 +16,6 @@ function getAuthHeaders() {
   };
 }
 
-// Cek apakah user yang login adalah Bendahara, Pengurus, atau Admin
 function isAdminOrTreasurer() {
   const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
   if (!loggedUser || !loggedUser.role) return false;
@@ -24,7 +23,6 @@ function isAdminOrTreasurer() {
   return role.includes('bendahara') || role.includes('pengurus') || role.includes('admin');
 }
 
-// Helper untuk Toggle State Button Loading
 function setButtonLoading(btnId, btnTextId, btnSpinnerId, isLoading, defaultText = "Kirim") {
   const btn = document.getElementById(btnId);
   const textEl = document.getElementById(btnTextId);
@@ -404,6 +402,7 @@ async function renderLoans() {
   }
 }
 
+// --- FUNGSI PAYROLL YANG SUDAH DIPERBAIKI ---
 async function renderPayroll() {
   const admin = typeof isAdminOrTreasurer === 'function' ? isAdminOrTreasurer() : false;
   const loggedUser = JSON.parse(localStorage.getItem('logged_user')) || {};
@@ -418,7 +417,7 @@ async function renderPayroll() {
 
     tbody.innerHTML = '';
     
-    // Filter data: Admin lihat semua (atau filter per bulan), Anggota hanya lihat miliknya sendiri
+    // Filter data
     let dataToRender = admin 
       ? payrolls 
       : payrolls.filter(p => String(p.member_id || p.memberId) === String(loggedUser.id));
@@ -439,7 +438,7 @@ async function renderPayroll() {
       return;
     }
 
-    // Urutkan data dari periode terbaru ke terlama
+    // Urutkan data dari periode terbaru
     dataToRender.sort((a, b) => (b.periode || b.period || '').localeCompare(a.periode || a.period || ''));
 
     // === UPDATE KARTU RINGKASAN GAJI TERAKHIR (Khusus Anggota) ===
@@ -450,31 +449,46 @@ async function renderPayroll() {
         document.getElementById('dash-last-period').innerText = `Periode: ${latestPayroll.periode || latestPayroll.period || '-'}`;
     }
 
-    // Render Tabel
+    // Render Tabel (Membedakan antara Admin dan Karyawan)
     dataToRender.forEach(p => {
       const periodeDisplay = p.periode || p.period || '-';
       const namaAnggota = p.nama || p.member_name || loggedUser.name || '-';
       
-      // Gunakan nama properti yang sesuai dengan return dari server.js
       const gajiPokok = Number(p.gajiPokok || p.gaji_pokok || 0);
       const potWajib = Number(p.potWajib || p.pot_wajib || 0);
       const potCicilan = Number(p.potCicilan || p.pot_cicilan || 0);
       const totalPotongan = Number(p.totalPotongan || p.total_potongan || (potWajib + potCicilan));
       const gajiBersih = Number(p.gajiBersih || p.gaji_bersih || (gajiPokok - totalPotongan));
 
-      tbody.innerHTML += `
-        <tr class="border-b border-slate-100 hover:bg-slate-50">
-          <td class="p-3.5 font-medium">${periodeDisplay}</td>
-          <td class="p-3.5">${formatRupiah(gajiPokok)}</td>
-          <td class="p-3.5">${formatRupiah(potWajib)}</td>
-          <td class="p-3.5">${formatRupiah(potCicilan)}</td>
-          <td class="p-3.5 font-medium text-rose-600">- ${formatRupiah(totalPotongan)}</td>
-          <td class="p-3.5 font-bold text-emerald-600">${formatRupiah(gajiBersih)}</td>
-          <td class="p-3.5 text-center">
-            ${!admin ? `<button onclick="showSlipDetail('${periodeDisplay}', '${namaAnggota}', ${gajiPokok}, ${potWajib}, ${potCicilan}, ${gajiBersih})" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition">Detail</button>` : '-'}
-          </td>
-        </tr>
-      `;
+      if (admin) {
+        // Tampilan Admin (Ada Nama Anggota, Tanpa Tombol Aksi)
+        tbody.innerHTML += `
+          <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="p-3.5 font-medium">${periodeDisplay}</td>
+            <td class="p-3.5">${namaAnggota}</td>
+            <td class="p-3.5">${formatRupiah(gajiPokok)}</td>
+            <td class="p-3.5">${formatRupiah(potWajib)}</td>
+            <td class="p-3.5">${formatRupiah(potCicilan)}</td>
+            <td class="p-3.5 font-medium text-rose-600">- ${formatRupiah(totalPotongan)}</td>
+            <td class="p-3.5 font-bold text-emerald-600">${formatRupiah(gajiBersih)}</td>
+          </tr>
+        `;
+      } else {
+        // Tampilan Karyawan (Tanpa Nama, Ada Tombol Detail)
+        tbody.innerHTML += `
+          <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="p-3.5 font-medium">${periodeDisplay}</td>
+            <td class="p-3.5">${formatRupiah(gajiPokok)}</td>
+            <td class="p-3.5">${formatRupiah(potWajib)}</td>
+            <td class="p-3.5">${formatRupiah(potCicilan)}</td>
+            <td class="p-3.5 font-medium text-rose-600">- ${formatRupiah(totalPotongan)}</td>
+            <td class="p-3.5 font-bold text-emerald-600">${formatRupiah(gajiBersih)}</td>
+            <td class="p-3.5 text-center">
+              <button onclick="showSlipDetail('${periodeDisplay}', '${namaAnggota}', ${gajiPokok}, ${potWajib}, ${potCicilan}, ${gajiBersih})" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition">Detail</button>
+            </td>
+          </tr>
+        `;
+      }
     });
   } catch (err) {
     console.error('Error rendering payroll:', err);
@@ -513,49 +527,6 @@ function showSlipDetail(periode, nama, gajiPokok, potWajib, potCicilan, gajiBers
     });
 }
 
-// Tambahkan pemantau agar tabel otomatis ikut berubah saat bulan di form diganti
-document.addEventListener('DOMContentLoaded', () => {
-  const periodInput = document.getElementById('payroll-period');
-  if (periodInput) {
-    periodInput.addEventListener('change', () => {
-      renderPayroll();
-    });
-  }
-});
-
-async function triggerProcessPayroll() {
-  const periodInput = document.getElementById('payroll-period');
-  const selectedPeriod = periodInput ? periodInput.value : '';
-
-  if (!selectedPeriod) {
-    alert('Silakan pilih periode pemotongan terlebih dahulu!');
-    return;
-  }
-
-  try {
-    const res = await fetch(`${API_BASE_URL}/payrolls/process`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders()
-      },
-      body: JSON.stringify({ period: selectedPeriod })
-    });
-
-    const result = await res.json();
-    
-    if (res.ok && result.success) {
-      alert(result.message);
-      renderPayroll(); 
-    } else {
-      alert(result.message || 'Gagal memproses pemotongan gaji.');
-    }
-  } catch (err) {
-    console.error('Error processing payroll:', err);
-    alert('Terjadi kesalahan koneksi server.');
-  }
-}
-
 // Global Render
 async function renderAll() {
   toggleGlobalSpinner(true);
@@ -578,6 +549,7 @@ async function renderAll() {
 }
 
 // --- FORM HANDLERS ---
+// Handler Simpanan
 const formSavings = document.getElementById('form-add-savings');
 if (formSavings) {
   formSavings.addEventListener('submit', async function(e) {
@@ -631,6 +603,7 @@ if (formSavings) {
   });
 }
 
+// Handler Pinjaman Karyawan
 function calculateLoanPreview() {
   const amount = Number(document.getElementById('loan-amount').value) || 0;
   const tenor = Number(document.getElementById('loan-tenor').value) || 1;
@@ -706,6 +679,7 @@ if (formLoan) {
   });
 }
 
+// Handler Proses Potong Gaji (Admin)
 async function processPayrollDeduction() {
   if (!isAdminOrTreasurer()) {
     return Swal.fire({
@@ -793,6 +767,7 @@ async function processPayrollDeduction() {
   }
 }
 
+// Handler Tambah Anggota Baru (Admin)
 const formAddMember = document.getElementById('form-add-member');
 if (formAddMember) {
   formAddMember.addEventListener('submit', async (e) => {
@@ -862,6 +837,7 @@ if (formAddMember) {
   });
 }
 
+// Handler Persetujuan Pinjaman (Admin)
 let isFetchingLoans = false;
 
 async function loadPendingLoans() {
@@ -943,20 +919,23 @@ async function handleLoanAction(loanId, actionStatus) {
     }
 }
 
+// Inisialisasi Awal & Event Listener
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof checkAuth === 'function') checkAuth();
+
+    const periodInput = document.getElementById('payroll-period');
+    if (periodInput) {
+      periodInput.addEventListener('change', () => {
+        renderPayroll();
+      });
+    }
 
     if (typeof loadPendingLoans === 'function') {
         loadPendingLoans();
     }
 });
 
-window.handleLoanAction = handleLoanAction;
-window.calculateLoanPreview = calculateLoanPreview;
-window.handleLogout = handleLogout;
-window.processPayrollDeduction = processPayrollDeduction;
-window.showSlipDetail = showSlipDetail;
-
+// Handler Ubah Profil (Karyawan)
 const formUpdateProfile = document.getElementById('form-update-profile');
 
 if (formUpdateProfile) {
@@ -1013,3 +992,10 @@ if (formUpdateProfile) {
         }
     });
 }
+
+// Expose Fungsi
+window.handleLoanAction = handleLoanAction;
+window.calculateLoanPreview = calculateLoanPreview;
+window.handleLogout = handleLogout;
+window.processPayrollDeduction = processPayrollDeduction;
+window.showSlipDetail = showSlipDetail;
