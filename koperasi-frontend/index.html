@@ -19,20 +19,10 @@
         }
 
         /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="bg-slate-100 font-sans antialiased text-slate-800">
@@ -63,12 +53,9 @@
             
             <!-- Background Header di Dalam Kotak Login -->
             <div class="bg-gradient-to-r from-blue-950 via-slate-900 to-blue-900 p-6 text-center text-white relative">
-                <!-- Watermark Logo Transparan di Atas Header Kotak -->
                 <div class="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
                     <span class="text-7xl font-black tracking-widest text-white select-none">TMA</span>
                 </div>
-
-                <!-- Icon Logo & Tulisan Koperasi -->
                 <div class="relative z-10">
                     <div class="inline-flex items-center justify-center w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl mb-2 border border-white/20 text-emerald-400 font-black text-lg">
                         TMA
@@ -101,7 +88,7 @@
         </div>
     </div>
 
-    <!-- Main App Screen (Muncul setelah login sukses) -->
+    <!-- Main App Screen -->
     <div id="main-app" class="flex h-screen bg-slate-100 overflow-hidden" style="display: none;">
         <!-- Sidebar -->
         <aside class="w-64 bg-slate-900 text-white flex flex-col justify-between shadow-2xl z-20">
@@ -138,7 +125,10 @@
                         <span>Pinjaman</span>
                     </button>
                     <button onclick="switchTab('payroll', this)" class="nav-btn w-full text-left py-3 px-4 rounded-xl transition font-medium text-sm text-slate-300 hover:bg-slate-800 hover:text-white">
-                        <span>Payroll Deduction</span>
+                        <span>Slip Gaji</span>
+                    </button>
+                    <button onclick="switchTab('settings', this)" class="nav-btn w-full text-left py-3 px-4 rounded-xl transition font-medium text-sm text-slate-300 hover:bg-slate-800 hover:text-white">
+                        <span>Pengaturan Akun</span>
                     </button>
                 </nav>
             </div>
@@ -150,7 +140,7 @@
         <!-- Content Area -->
         <main class="flex-1 overflow-y-auto p-8 bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50/30">
             
-            <!-- Top Header Banner / Welcome Bar -->
+            <!-- Top Header Banner -->
             <div class="mb-8 bg-white rounded-2xl p-6 shadow-sm border border-slate-200/60 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <span class="inline-block px-3 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full mb-1">Portal Keuangan Anggota</span>
@@ -165,8 +155,6 @@
 
             <!-- TAB 1: DASHBOARD -->
             <div id="tab-dashboard" class="tab-content active space-y-8">
-                
-                <!-- Cards Ringkasan Karyawan -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-6 rounded-2xl shadow-xl shadow-blue-500/10 border border-blue-500/20 relative overflow-hidden">
                         <div class="absolute -right-4 -bottom-4 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none"></div>
@@ -220,7 +208,6 @@
 
             <!-- TAB 3: PINJAMAN -->
             <div id="tab-pinjaman" class="tab-content space-y-6">
-                <!-- Form Pengajuan Pinjaman Mandiri -->
                 <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-200/60">
                     <h3 class="text-lg font-bold text-slate-900 mb-4">Formulir Pengajuan Pinjaman</h3>
                     <form id="form-apply-loan" class="space-y-4">
@@ -243,7 +230,6 @@
                             </div>
                         </div>
 
-                        <!-- Simulasi Cicilan -->
                         <div class="p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm space-y-1">
                             <p class="font-semibold text-slate-700">Simulasi Cicilan Per Bulan:</p>
                             <p>Pokok: <span id="prev-pokok" class="font-medium text-slate-900">Rp 0</span></p>
@@ -278,8 +264,17 @@
                 </div>
             </div>
 
-            <!-- TAB 4: PAYROLL -->
+            <!-- TAB 4: SLIP GAJI (KARYAWAN) -->
             <div id="tab-payroll" class="tab-content space-y-6">
+                <!-- Kartu Ringkasan Gaji Terakhir -->
+                <div class="bg-gradient-to-br from-indigo-600 to-blue-800 text-white p-8 rounded-2xl shadow-xl border border-blue-500/20 relative overflow-hidden">
+                    <div class="absolute -right-4 -bottom-4 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-blue-100 opacity-90 mb-1">Gaji Bersih Diterima (Bulan Terakhir)</p>
+                    <h2 id="dash-last-salary" class="text-4xl font-extrabold mt-2 tracking-tight">Rp 0</h2>
+                    <p id="dash-last-period" class="text-sm text-blue-200 mt-2">Belum ada data gaji</p>
+                </div>
+
+                <!-- Tabel Riwayat Gaji -->
                 <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-200/60">
                     <h3 class="text-lg font-bold text-slate-900 mb-4">Riwayat Slip Gaji Anda</h3>
                     <div class="overflow-x-auto">
@@ -287,40 +282,56 @@
                             <thead>
                                 <tr class="border-b border-slate-100 bg-slate-50/70 text-slate-600 font-semibold">
                                     <th class="p-3.5">Periode</th>
-                                    <th class="p-3.5">Anggota</th>
                                     <th class="p-3.5">Gaji Pokok</th>
                                     <th class="p-3.5">Pot. Wajib</th>
                                     <th class="p-3.5">Pot. Cicilan</th>
                                     <th class="p-3.5">Total Potongan</th>
                                     <th class="p-3.5">Gaji Bersih</th>
+                                    <th class="p-3.5 text-center">Aksi</th>
                                 </tr>
                             </thead>
-                            <tbody id="payroll-tbody"></tbody>
+                            <tbody id="payroll-tbody">
+                                <tr><td colspan="7" class="p-4 text-center text-slate-400">Memuat data...</td></tr>
+                            </tbody>
                         </table>
                     </div>
                 </div>
             </div>
+
+            <!-- TAB 5: PENGATURAN AKUN -->
+            <div id="tab-settings" class="tab-content space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60 max-w-lg">
+                    <h3 class="text-lg font-bold text-slate-900 mb-4">Pengaturan Akun</h3>
+                    
+                    <form id="form-update-profile" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Password Lama (Wajib)</label>
+                            <input type="password" id="profile-old-password" required class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-900 outline-none" placeholder="Masukkan password Anda saat ini">
+                        </div>
+                        
+                        <div class="border-t border-slate-100 pt-4 mt-4">
+                            <p class="text-xs text-slate-500 mb-2">Biarkan kosong jika tidak ingin mengubah.</p>
+                            
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Username Baru</label>
+                            <input type="text" id="profile-new-username" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-900 outline-none" placeholder="Username baru">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-1">Password Baru</label>
+                            <input type="password" id="profile-new-password" class="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-blue-900 outline-none" placeholder="Password baru">
+                        </div>
+                        
+                        <button type="submit" id="btn-update-profile" class="bg-blue-900 text-white px-6 py-3 rounded-xl hover:bg-blue-800 transition text-sm font-semibold flex items-center shadow-md">
+                            <span id="btn-update-profile-text">Simpan Perubahan</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
         </main>
     </div>
 
     <!-- Script App -->
     <script src="js/app.js"></script>
-    <script>
-        // Helper styling tab active
-        function switchTab(tabId, btnElement) {
-            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
-            document.querySelectorAll('.nav-btn').forEach(el => {
-                el.classList.remove('bg-blue-600', 'text-white', 'font-medium', 'shadow-md');
-                el.classList.add('hover:bg-slate-800', 'text-slate-300');
-            });
-
-            const target = document.getElementById(`tab-${tabId}`);
-            if (target) target.style.display = 'block';
-            if (btnElement) {
-                btnElement.classList.remove('hover:bg-slate-800', 'text-slate-300');
-                btnElement.classList.add('bg-blue-600', 'text-white', 'font-medium', 'shadow-md');
-            }
-        }
-    </script>
 </body>
 </html>

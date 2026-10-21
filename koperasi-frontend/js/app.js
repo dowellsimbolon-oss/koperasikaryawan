@@ -50,12 +50,10 @@ function checkAuth() {
   const isIndexPage = window.location.pathname.includes('index.html') || window.location.pathname.endsWith('/');
 
   if (loggedUser) {
-    // Jika berada di halaman utama tapi user adalah admin, arahkan ke admin.html
     if (isIndexPage && isAdminOrTreasurer()) {
       window.location.href = 'admin.html';
       return;
     }
-    // Jika berada di admin.html tapi user adalah anggota biasa, arahkan ke index.html
     if (isAdminPage && !isAdminOrTreasurer()) {
       window.location.href = 'index.html';
       return;
@@ -64,7 +62,6 @@ function checkAuth() {
     if (loginScreen) loginScreen.style.display = 'none';
     if (mainApp) mainApp.style.display = 'flex';
 
-    // Update UI Badge User
     const userNameEl = document.getElementById('user-name') || document.getElementById('admin-name');
     const userRoleEl = document.getElementById('user-role') || document.getElementById('admin-role');
     const userAvatarEl = document.getElementById('user-avatar');
@@ -73,12 +70,9 @@ function checkAuth() {
     if (userRoleEl) userRoleEl.innerText = loggedUser.role;
     if (userAvatarEl) userAvatarEl.innerText = loggedUser.name ? loggedUser.name.charAt(0).toUpperCase() : 'U';
 
-    // Pengaturan form khusus anggota biasa
     adjustUIByRole(loggedUser);
-
     renderAll();
   } else {
-    // Jika belum login dan berada di admin.html, arahkan ke index.html
     if (isAdminPage) {
       window.location.href = 'index.html';
       return;
@@ -88,10 +82,8 @@ function checkAuth() {
   }
 }
 
-// Pengaturan Tampilan Berdasarkan Role
 function adjustUIByRole(loggedUser) {
   const admin = isAdminOrTreasurer();
-
   const cardAddSavings = document.getElementById('card-add-savings');
   const payrollActionSection = document.getElementById('payroll-action-section');
 
@@ -99,12 +91,9 @@ function adjustUIByRole(loggedUser) {
   if (payrollActionSection) payrollActionSection.style.display = admin ? 'block' : 'none';
 
   const loanMemberSelect = document.getElementById('loan-member-id');
-  
-  if (!admin && loggedUser) {
-    if (loanMemberSelect) {
-      loanMemberSelect.innerHTML = `<option value="${loggedUser.id}">${loggedUser.name} (${loggedUser.id})</option>`;
-      loanMemberSelect.disabled = true;
-    }
+  if (!admin && loggedUser && loanMemberSelect) {
+    loanMemberSelect.innerHTML = `<option value="${loggedUser.id}">${loggedUser.name} (${loggedUser.id})</option>`;
+    loanMemberSelect.disabled = true;
   }
 }
 
@@ -124,16 +113,12 @@ if (formLogin) {
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: usernameInput,
-          password: passwordInput
-        })
+        body: JSON.stringify({ username: usernameInput, password: passwordInput })
       });
 
       const result = await response.json();
 
       if (response.ok) {
-        // Simpan token dan redirect setelah sukses login
         localStorage.setItem('token', result.token);
         localStorage.setItem('logged_user', JSON.stringify(result.user));
 
@@ -150,7 +135,6 @@ if (formLogin) {
         }
       }
     } catch (error) {
-      console.error('Login Error:', error);
       if (errorMsg) {
         errorMsg.textContent = 'Terjadi kesalahan pada koneksi server.';
         errorMsg.style.display = 'block';
@@ -163,11 +147,32 @@ if (formLogin) {
 
 // Handle Logout
 function handleLogout() {
-  if (confirm('Apakah Anda yakin ingin keluar dari aplikasi?')) {
-    localStorage.removeItem('logged_user');
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    window.location.href = 'index.html';
+  if (typeof Swal !== 'undefined') {
+    Swal.fire({
+      title: 'Keluar Aplikasi?',
+      text: 'Sesi Anda akan diakhiri, Anda harus login kembali untuk masuk.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#4b5563',
+      confirmButtonText: 'Ya, Keluar',
+      cancelButtonText: 'Batal',
+      reverseButtons: true
+    }).then((result) => {
+      if (result.isConfirmed) {
+        localStorage.removeItem('logged_user');
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        window.location.href = 'index.html';
+      }
+    });
+  } else {
+    if (confirm('Apakah Anda yakin ingin keluar dari aplikasi?')) {
+      localStorage.removeItem('logged_user');
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      window.location.href = 'index.html';
+    }
   }
 }
 
@@ -183,7 +188,7 @@ function switchTab(tabId, btnElement) {
   renderAll();
 }
 
-// --- RENDER FUNCTIONS DENGAN FILTER ROLE ---
+// --- RENDER FUNCTIONS ---
 async function renderDashboard() {
   const admin = isAdminOrTreasurer();
   const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
@@ -232,8 +237,15 @@ async function renderDashboard() {
         const mySavings = savingsList.find(s => (s.memberId === loggedUser.id || s.member_id === loggedUser.id || s.id === loggedUser.id)) || { pokok: 0, wajib: 0, sukarela: 0 };
         const myTotalSavings = (Number(mySavings.pokok) || 0) + (Number(mySavings.wajib) || 0) + (Number(mySavings.sukarela) || 0);
         
-        const myLoan = loansList.find(l => (l.memberId === loggedUser.id || l.member_id === loggedUser.id)) || { remaining_amount: 0, remaining: 0 };
-        const myRemainingLoan = Number(myLoan.remaining_amount || myLoan.remaining || 0);
+        const myApprovedLoans = loansList.filter(l => 
+            (l.memberId === loggedUser.id || l.member_id === loggedUser.id) && 
+            (l.status === 'APPROVED' || l.status === 'AKTIF')
+        );
+
+        let myRemainingLoan = 0;
+        if (myApprovedLoans.length > 0) {
+            myRemainingLoan = myApprovedLoans.reduce((total, loan) => total + Number(loan.remaining_amount || loan.remaining || 0), 0);
+        }
 
         const elSavings = document.getElementById('dash-total-savings');
         const elLoans = document.getElementById('dash-total-loans');
@@ -291,58 +303,38 @@ async function renderOptions() {
   }
 }
 
-let isFetchingSavings = false;
-
 async function renderSavings() {
-  if (isFetchingSavings) return;
-  isFetchingSavings = true;
-
-  const admin = typeof isAdminOrTreasurer === 'function' ? isAdminOrTreasurer() : false;
+  const admin = isAdminOrTreasurer();
   const loggedUser = JSON.parse(localStorage.getItem('logged_user')) || {};
-
   const tbody = document.getElementById('savings-tbody');
-  if (!tbody) {
-    isFetchingSavings = false;
-    return;
-  }
+  if (!tbody) return;
 
   try {
     const res = await fetch(`${API_BASE_URL}/savings`, { headers: getAuthHeaders() });
-    if (!res.ok) {
-      isFetchingSavings = false;
-      return;
-    }
+    if (!res.ok) return;
 
     const result = await res.json();
-    
-    // Amankan pengambilan data apakah berupa Array langsung atau terbungkus di dalam object .data
-    const savingsArray = Array.isArray(result) ? result : (result.success && Array.isArray(result.data) ? result.data : []);
+    const savings = Array.isArray(result) ? result : (result.data || result.savings || []);
 
     tbody.innerHTML = '';
-    
-    const dataToRender = admin 
-      ? savingsArray 
-      : savingsArray.filter(s => String(s.memberId || s.member_id || s.id) === String(loggedUser.id));
+    const dataToRender = admin ? savings : savings.filter(s => String(s.memberId || s.member_id || s.id) === String(loggedUser.id));
 
     if (dataToRender.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Belum ada data simpanan.</td></tr>`;
-      isFetchingSavings = false;
       return;
     }
 
     dataToRender.forEach(s => {
-      // Antisipasi perbedaan nama kolom di database (pokok vs simpanan_pokok, dll)
-      const pokok = Number(s.pokok || s.simpanan_pokok || 0);
-      const wajib = Number(s.wajib || s.simpanan_wajib || 0);
-      const sukarela = Number(s.sukarela || s.simpanan_sukarela || 0);
+      const pokok = Number(s.pokok || 0);
+      const wajib = Number(s.wajib || 0);
+      const sukarela = Number(s.sukarela || 0);
       const total = pokok + wajib + sukarela;
-
-      const namaAnggota = s.nama || s.member_name || loggedUser.nama || '-';
-      const idAnggota = s.memberId || s.member_id || s.id || loggedUser.id || '-';
+      const nama = s.nama || s.member_name || loggedUser.nama || '-';
+      const id = s.memberId || s.member_id || s.id || loggedUser.id || '-';
 
       tbody.innerHTML += `
         <tr class="border-b border-slate-100 hover:bg-slate-50">
-          <td class="p-3.5 font-medium">${namaAnggota} <span class="text-xs text-slate-400">(${idAnggota})</span></td>
+          <td class="p-3.5 font-medium">${nama} <span class="text-xs text-slate-400">(${id})</span></td>
           <td class="p-3.5">${formatRupiah(pokok)}</td>
           <td class="p-3.5">${formatRupiah(wajib)}</td>
           <td class="p-3.5">${formatRupiah(sukarela)}</td>
@@ -352,14 +344,11 @@ async function renderSavings() {
     });
   } catch (err) {
     console.error('Error rendering savings:', err);
-    tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-400">Gagal memuat data simpanan.</td></tr>`;
-  } finally {
-    isFetchingSavings = false;
   }
 }
 
 async function renderLoans() {
-  const admin = typeof isAdminOrTreasurer === 'function' ? isAdminOrTreasurer() : true;
+  const admin = isAdminOrTreasurer();
   const loggedUser = JSON.parse(localStorage.getItem('logged_user')) || {};
 
   try {
@@ -381,15 +370,15 @@ async function renderLoans() {
     dataToRender.forEach(l => {
       const remaining = Number(l.remaining_amount || l.remaining || 0);
       const statusValue = (l.status || '').toUpperCase();
-      
       let statusHtml = '';
       let remainingDisplay = formatRupiah(remaining);
 
-      if (statusValue === 'REJECTED' || statusValue === 'DITOLAK') {
+      if (statusValue === 'REJECTED') {
         statusHtml = `<span style="color: #dc2626; font-weight: 600;">DITOLAK</span>`;
-        remainingDisplay = '-'; // Sisa tagihan dikosongkan/strip jika ditolak
+        remainingDisplay = '-';
       } else if (statusValue === 'PENDING') {
         statusHtml = `<span style="color: #d97706; font-weight: 600;">PENDING</span>`;
+        remainingDisplay = '-';
       } else {
         statusHtml = `<span style="color: ${remaining === 0 ? '#16a34a' : '#d97706'}; font-weight: 600;">
           ${remaining === 0 ? 'LUNAS' : 'AKTIF'}
@@ -429,59 +418,99 @@ async function renderPayroll() {
 
     tbody.innerHTML = '';
     
-    // 1. Filter hak akses
+    // Filter data: Admin lihat semua (atau filter per bulan), Anggota hanya lihat miliknya sendiri
     let dataToRender = admin 
       ? payrolls 
-      : payrolls.filter(p => p.member_id === loggedUser.id || p.id === loggedUser.id);
+      : payrolls.filter(p => String(p.member_id || p.memberId) === String(loggedUser.id));
 
-    // 2. KHUSUS ADMIN: Filter tabel agar hanya menampilkan periode yang sedang dipilih di form
+    // Khusus Admin: Filter tabel berdasarkan periode yang sedang dipilih di form
     if (admin) {
       const periodInput = document.getElementById('payroll-period');
       if (periodInput && periodInput.value) {
-        const selectedPeriod = periodInput.value; // contoh: "2026-11"
+        const selectedPeriod = periodInput.value;
         dataToRender = dataToRender.filter(p => (p.periode || p.period) === selectedPeriod);
       }
     }
 
-    // Deduplikasi data
-    const uniqueMap = new Map();
-    dataToRender.forEach(p => {
-      const key = `${p.member_id}-${p.periode || p.period}`;
-      if (!uniqueMap.has(key)) {
-        uniqueMap.set(key, p);
-      }
-    });
-    dataToRender = Array.from(uniqueMap.values());
-
     if (dataToRender.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-400">Belum ada data slip gaji untuk periode ini.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-400">Belum ada data slip gaji.</td></tr>`;
+      if (document.getElementById('dash-last-salary')) document.getElementById('dash-last-salary').innerText = "Rp 0";
+      if (document.getElementById('dash-last-period')) document.getElementById('dash-last-period').innerText = "Belum ada data gaji";
       return;
     }
 
+    // Urutkan data dari periode terbaru ke terlama
+    dataToRender.sort((a, b) => (b.periode || b.period || '').localeCompare(a.periode || a.period || ''));
+
+    // === UPDATE KARTU RINGKASAN GAJI TERAKHIR (Khusus Anggota) ===
+    if (!admin && document.getElementById('dash-last-salary')) {
+        const latestPayroll = dataToRender[0];
+        const gajiBersihTerakhir = Number(latestPayroll.gajiBersih || latestPayroll.gaji_bersih || 0);
+        document.getElementById('dash-last-salary').innerText = formatRupiah(gajiBersihTerakhir);
+        document.getElementById('dash-last-period').innerText = `Periode: ${latestPayroll.periode || latestPayroll.period || '-'}`;
+    }
+
+    // Render Tabel
     dataToRender.forEach(p => {
       const periodeDisplay = p.periode || p.period || '-';
-      const namaAnggota = p.nama || p.member_name || '-';
-      const gajiPokok = Number(p.gaji_pokok || 0);
-      const potWajib = Number(p.pot_wajib || p.potongan_wajib || 0);
-      const potCicilan = Number(p.pot_cicilan || p.potongan_cicilan || 0);
-      const totalPotongan = Number(p.total_potongan || (potWajib + potCicilan));
-      const gajiBersih = Number(p.gaji_bersih || (gajiPokok - totalPotongan));
+      const namaAnggota = p.nama || p.member_name || loggedUser.name || '-';
+      
+      // Gunakan nama properti yang sesuai dengan return dari server.js
+      const gajiPokok = Number(p.gajiPokok || p.gaji_pokok || 0);
+      const potWajib = Number(p.potWajib || p.pot_wajib || 0);
+      const potCicilan = Number(p.potCicilan || p.pot_cicilan || 0);
+      const totalPotongan = Number(p.totalPotongan || p.total_potongan || (potWajib + potCicilan));
+      const gajiBersih = Number(p.gajiBersih || p.gaji_bersih || (gajiPokok - totalPotongan));
 
       tbody.innerHTML += `
         <tr class="border-b border-slate-100 hover:bg-slate-50">
           <td class="p-3.5 font-medium">${periodeDisplay}</td>
-          <td class="p-3.5">${namaAnggota}</td>
           <td class="p-3.5">${formatRupiah(gajiPokok)}</td>
           <td class="p-3.5">${formatRupiah(potWajib)}</td>
           <td class="p-3.5">${formatRupiah(potCicilan)}</td>
-          <td class="p-3.5 font-medium">${formatRupiah(totalPotongan)}</td>
-          <td class="p-3.5 font-bold text-blue-900">${formatRupiah(gajiBersih)}</td>
+          <td class="p-3.5 font-medium text-rose-600">- ${formatRupiah(totalPotongan)}</td>
+          <td class="p-3.5 font-bold text-emerald-600">${formatRupiah(gajiBersih)}</td>
+          <td class="p-3.5 text-center">
+            ${!admin ? `<button onclick="showSlipDetail('${periodeDisplay}', '${namaAnggota}', ${gajiPokok}, ${potWajib}, ${potCicilan}, ${gajiBersih})" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition">Detail</button>` : '-'}
+          </td>
         </tr>
       `;
     });
   } catch (err) {
     console.error('Error rendering payroll:', err);
   }
+}
+
+// Fungsi untuk menampilkan Pop-up Slip Gaji
+function showSlipDetail(periode, nama, gajiPokok, potWajib, potCicilan, gajiBersih) {
+    Swal.fire({
+        title: `Slip Gaji - ${periode}`,
+        html: `
+            <div class="text-left text-sm mt-4">
+                <p class="mb-2"><b>Nama Karyawan:</b> ${nama}</p>
+                <hr class="my-2 border-slate-200">
+                <div class="flex justify-between py-1">
+                    <span>Gaji Pokok</span>
+                    <span class="font-semibold">${formatRupiah(gajiPokok)}</span>
+                </div>
+                <div class="flex justify-between py-1 text-rose-600">
+                    <span>Potongan Wajib</span>
+                    <span>- ${formatRupiah(potWajib)}</span>
+                </div>
+                <div class="flex justify-between py-1 text-rose-600">
+                    <span>Potongan Cicilan</span>
+                    <span>- ${formatRupiah(potCicilan)}</span>
+                </div>
+                <hr class="my-2 border-slate-200">
+                <div class="flex justify-between py-2 text-lg font-bold text-emerald-600">
+                    <span>Gaji Bersih Diterima</span>
+                    <span>${formatRupiah(gajiBersih)}</span>
+                </div>
+            </div>
+        `,
+        confirmButtonText: 'Tutup',
+        confirmButtonColor: '#1e3a8a'
+    });
 }
 
 // Tambahkan pemantau agar tabel otomatis ikut berubah saat bulan di form diganti
@@ -495,7 +524,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function triggerProcessPayroll() {
-  // 1. Ambil nilai dari input dengan id="payroll-period" yang ada di HTML Anda
   const periodInput = document.getElementById('payroll-period');
   const selectedPeriod = periodInput ? periodInput.value : '';
 
@@ -505,7 +533,6 @@ async function triggerProcessPayroll() {
   }
 
   try {
-    // 2. Kirim nilai periode tersebut (format: "2026-09") ke backend
     const res = await fetch(`${API_BASE_URL}/payrolls/process`, {
       method: 'POST',
       headers: {
@@ -519,7 +546,6 @@ async function triggerProcessPayroll() {
     
     if (res.ok && result.success) {
       alert(result.message);
-      // 3. Muat ulang tabel agar data periode yang baru langsung tampil
       renderPayroll(); 
     } else {
       alert(result.message || 'Gagal memproses pemotongan gaji.');
@@ -556,7 +582,7 @@ const formSavings = document.getElementById('form-add-savings');
 if (formSavings) {
   formSavings.addEventListener('submit', async function(e) {
     e.preventDefault();
-    if (!isAdminOrTreasurer()) return alert('Akses ditolak. Hanya bendahara yang dapat menambah simpanan.');
+    if (!isAdminOrTreasurer()) return alert('Akses ditolak.');
 
     const memberId = document.getElementById('savings-member-id').value;
     const type = document.getElementById('savings-type').value;
@@ -623,6 +649,7 @@ function calculateLoanPreview() {
 
   return totalCicilan;
 }
+
 const formLoan = document.getElementById('form-apply-loan');
 if (formLoan) {
   formLoan.addEventListener('submit', async function(e) {
@@ -643,7 +670,6 @@ if (formLoan) {
       });
 
       if (res.ok) {
-        // Mengganti alert sukses dengan SweetAlert2
         if (typeof Swal !== 'undefined') {
           Swal.fire({
             icon: 'success',
@@ -662,7 +688,6 @@ if (formLoan) {
         const errData = await res.json();
         const errorMsg = errData.message || 'Gagal mengajukan pinjaman';
         
-        // Mengganti alert error dengan SweetAlert2
         if (typeof Swal !== 'undefined') {
           Swal.fire({ icon: 'error', title: 'Gagal', text: errorMsg });
         } else {
@@ -691,7 +716,6 @@ async function processPayrollDeduction() {
     });
   }
 
-  // Ambil elemen input periode secara langsung saat tombol diklik
   const periodInput = document.getElementById('payroll-period');
   if (!periodInput) {
     return Swal.fire({
@@ -704,7 +728,6 @@ async function processPayrollDeduction() {
 
   let period = periodInput.value;
   
-  // Validasi jika input kosong
   if (!period) {
     return Swal.fire({
       title: 'Peringatan',
@@ -713,10 +736,6 @@ async function processPayrollDeduction() {
       confirmButtonColor: '#10B981'
     });
   }
-
-  // Pastikan format periode bersih (misal: "2026-09")
-  // Jika input bertipe 'month' mengembalikan format YYYY-MM, kita gunakan langsung
-  console.log("PERIODE YANG DIPILIH DI FORM:", period);
 
   const confirmResult = await Swal.fire({
     title: 'Konfirmasi Pemotongan Gaji',
@@ -774,7 +793,6 @@ async function processPayrollDeduction() {
   }
 }
 
-// Form Tambah Anggota / User Baru
 const formAddMember = document.getElementById('form-add-member');
 if (formAddMember) {
   formAddMember.addEventListener('submit', async (e) => {
@@ -799,7 +817,7 @@ if (formAddMember) {
     }
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/members`, {
+      const res = await fetch(`${API_BASE_URL}/members`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload)
@@ -844,7 +862,6 @@ if (formAddMember) {
   });
 }
 
-// 1. Fungsi memuat daftar pinjaman 'Pending' secara dinamis
 let isFetchingLoans = false;
 
 async function loadPendingLoans() {
@@ -862,13 +879,13 @@ async function loadPendingLoans() {
         if (!res.ok) throw new Error('Gagal mengambil data pinjaman');
         
         const result = await res.json();
-        const dataLoans = result.success ? result.data : (Array.isArray(result) ? result : []);
+        const dataLoans = result.success ? result.data : (Array.isArray(result) ? result : (result.loans || []));
 
         if (dataLoans.length > 0) {
             tbody.innerHTML = dataLoans.map(loan => `
                 <tr class="border-b hover:bg-gray-50">
                     <td class="p-3 font-medium">${loan.member_id || loan.memberId || '-'}</td>
-                    <td class="p-3">${loan.nama || '-'}</td>
+                    <td class="p-3">${loan.nama || loan.member_name || '-'}</td>
                     <td class="p-3 font-semibold text-blue-900">Rp ${Number(loan.jumlah || loan.amount || 0).toLocaleString('id-ID')}</td>
                     <td class="p-3">${loan.tenor || 0} Bulan</td>
                     <td class="p-3 text-center space-x-2">
@@ -888,7 +905,6 @@ async function loadPendingLoans() {
     }
 }
 
-// 2. Fungsi Tombol Aksi (Setujui / Tolak) dengan pesan & endpoint yang benar
 async function handleLoanAction(loanId, actionStatus) {
     const endpoint = actionStatus === 'APPROVED' ? 'approve' : 'reject';
     const actionText = actionStatus === 'APPROVED' ? 'disetujui' : 'ditolak';
@@ -905,7 +921,6 @@ async function handleLoanAction(loanId, actionStatus) {
         const result = await res.json();
 
         if (result.success) {
-            // Notifikasi visual sukses dengan SweetAlert2
             Swal.fire({
                 icon: 'success',
                 title: 'Berhasil!',
@@ -913,7 +928,8 @@ async function handleLoanAction(loanId, actionStatus) {
                 timer: 2000,
                 showConfirmButton: false
             });
-            loadPendingLoans(); // Refresh tabel seketika
+            loadPendingLoans();
+            renderLoans(); // Refresh tabel pinjaman
         } else {
             Swal.fire({
                 icon: 'error',
@@ -927,58 +943,73 @@ async function handleLoanAction(loanId, actionStatus) {
     }
 }
 
-
-// 3. Inisialisasi Halaman & Polling Real-Time setiap 3 Detik
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof checkAuth === 'function') checkAuth();
 
     if (typeof loadPendingLoans === 'function') {
-        loadPendingLoans(); // Muat data pertama kali saat halaman admin dibuka
-
+        loadPendingLoans();
     }
 });
 
-const btnLogout = document.getElementById('btn-logout');
-if (btnLogout) {
-    btnLogout.addEventListener('click', (e) => {
-        e.preventDefault();
-        handleLogout();
-    });
-}
+window.handleLoanAction = handleLoanAction;
+window.calculateLoanPreview = calculateLoanPreview;
+window.handleLogout = handleLogout;
+window.processPayrollDeduction = processPayrollDeduction;
+window.showSlipDetail = showSlipDetail;
 
-// Definisikan fungsi handleLogout agar bisa dipanggil dari event listener maupun window
-function handleLogout() {
-    Swal.fire({
-        title: 'Keluar Aplikasi?',
-        text: 'Sesi Anda akan diakhiri, Anda harus login kembali untuk masuk.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626', // Warna merah untuk tombol konfirmasi
-        cancelButtonColor: '#4b5563',  // Warna abu-abu untuk tombol batal
-        confirmButtonText: 'Ya, Keluar',
-        cancelButtonText: 'Batal',
-        reverseButtons: true
-    }).then((result) => {
-        if (result.isConfirmed) {
-            localStorage.removeItem('logged_user');
-            localStorage.removeItem('user');
-            localStorage.removeItem('token');
-            window.location.href = 'index.html';
+const formUpdateProfile = document.getElementById('form-update-profile');
+
+if (formUpdateProfile) {
+    formUpdateProfile.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const oldPassword = document.getElementById('profile-old-password').value;
+        const newUsername = document.getElementById('profile-new-username').value;
+        const newPassword = document.getElementById('profile-new-password').value;
+
+        if (!oldPassword) {
+            return Swal.fire('Peringatan', 'Password lama wajib diisi!', 'warning');
+        }
+
+        if (!newUsername && !newPassword) {
+            return Swal.fire('Peringatan', 'Isi username baru atau password baru untuk melakukan perubahan.', 'warning');
+        }
+
+        const btn = document.getElementById('btn-update-profile');
+        const btnText = document.getElementById('btn-update-profile-text');
+        btn.disabled = true;
+        btnText.textContent = 'Menyimpan...';
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/users/profile`, {
+                method: 'PUT',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ oldPassword, newUsername, newPassword })
+            });
+
+            const result = await res.json();
+
+            if (res.ok && result.success) {
+                await Swal.fire({
+                    icon: 'success',
+                    title: 'Berhasil!',
+                    text: result.message,
+                    confirmButtonText: 'Login Ulang',
+                    allowOutsideClick: false
+                });
+                
+                localStorage.removeItem('logged_user');
+                localStorage.removeItem('token');
+                window.location.href = 'index.html'; 
+            } else {
+                Swal.fire('Gagal', result.message || 'Gagal memperbarui profil', 'error');
+            }
+        } catch (err) {
+            console.error('Update Profile Error:', err);
+            Swal.fire('Kesalahan', 'Terjadi kesalahan koneksi server.', 'error');
+        } finally {
+            btn.disabled = false;
+            btnText.textContent = 'Simpan Perubahan';
         }
     });
 }
-
-// Expose fungsi ke window untuk akses onclick di HTML
-window.handleLoanAction = handleLoanAction;
-window.processPayrollDeduction = processPayrollDeduction;
-window.calculateLoanPreview = calculateLoanPreview;
-window.handleLogout = handleLogout;
-
-document.addEventListener('DOMContentLoaded', () => {
-  const periodInput = document.getElementById('payroll-period');
-  if (periodInput) {
-    periodInput.addEventListener('change', () => {
-      renderPayroll(); // Otomatis merefresh tabel saat periode diubah
-    });
-  }
-});
