@@ -364,6 +364,8 @@ async function renderLoans() {
     if (!tbody) return;
 
     tbody.innerHTML = '';
+    
+    // Filter data berdasarkan role (Admin lihat semua, Karyawan lihat miliknya)
     const dataToRender = admin ? loans : loans.filter(l => (l.memberId === loggedUser.id || l.member_id === loggedUser.id));
 
     if (dataToRender.length === 0) {
@@ -374,9 +376,12 @@ async function renderLoans() {
     dataToRender.forEach(l => {
       const remaining = Number(l.remaining_amount || l.remaining || 0);
       const statusValue = (l.status || '').toUpperCase();
+      
       let statusHtml = '';
       let remainingDisplay = formatRupiah(remaining);
+      let aksiHtml = '-'; // Default: tidak ada aksi
 
+      // 1. Logika Warna dan Teks Status
       if (statusValue === 'REJECTED') {
         statusHtml = `<span style="color: #dc2626; font-weight: 600;">DITOLAK</span>`;
         remainingDisplay = '-';
@@ -397,16 +402,17 @@ async function renderLoans() {
       const namaPeminjam = l.nama || l.member_name || loggedUser.name || 'Anggota';
       const idPeminjam = l.memberId || l.member_id || loggedUser.id || '-';
 
-      // Logika Tombol Aksi
-      let aksiHtml = '-';
-      
+      // 2. Logika Tombol Aksi (Hanya muncul untuk role tertentu)
       if (admin) {
         if (statusValue === 'APPROVED') {
+          // Tombol untuk Bendahara mencairkan dana
           aksiHtml = `<button onclick="disburseLoan('${l.id}')" class="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">Cairkan Dana</button>`;
         } else if (statusValue === 'PENDING_PAYOFF') {
+          // Tombol untuk Bendahara memverifikasi pelunasan
           aksiHtml = `<button onclick="approvePayoff('${l.id}')" class="bg-emerald-600 text-white px-3 py-1 rounded text-xs hover:bg-emerald-700">Verifikasi Bayar</button>`;
         }
       } else {
+        // Tombol untuk Karyawan (hanya bisa ajukan lunasi jika sudah cair)
         if (statusValue === 'DISBURSED' && remaining > 0) {
           aksiHtml = `<button onclick="requestPayoff('${l.id}')" class="bg-amber-500 text-white px-3 py-1 rounded text-xs hover:bg-amber-600">Ajukan Lunasi</button>`;
         } else if (statusValue === 'PENDING_PAYOFF') {
@@ -415,7 +421,7 @@ async function renderLoans() {
       }
 
       tbody.innerHTML += `
-        <tr class="border-b border-slate-100">
+        <tr class="border-b border-slate-100 hover:bg-slate-50">
           <td class="p-3.5">${namaPeminjam} (${idPeminjam})</td>
           <td class="p-3.5">${formatRupiah(l.amount || l.jumlah || 0)}</td>
           <td class="p-3.5">${l.tenor || 0} Bln</td>
@@ -901,24 +907,27 @@ async function loadPendingLoans() {
 
 async function handleLoanAction(loanId, actionStatus) {
     const endpoint = actionStatus === 'APPROVED' ? 'approve' : 'reject';
-    const actionText = actionStatus === 'APPROVED' ? 'disetujui' : 'ditolak';
+    
+    // Gunakan endpoint POST /loans/approve (via body) karena lebih stabil
+    const url = `${API_BASE_URL}/loans/${endpoint}`; 
 
     try {
-        const res = await fetch(`${API_BASE_URL}/loans/${loanId}/${endpoint}`, {
+        const res = await fetch(url, {
             method: 'POST',
             headers: {
                 ...getAuthHeaders(),
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ id: loanId })
+            body: JSON.stringify({ id: loanId }) // Kirim ID lewat body JSON
         });
+        
         const result = await res.json();
 
-        if (result.success) {
+        if (res.ok && result.success) {
             Swal.fire({
                 icon: 'success',
                 title: 'Berhasil!',
-                text: `Pengajuan pinjaman berhasil ${actionText}!`,
+                text: `Pengajuan pinjaman berhasil ${actionStatus === 'APPROVED' ? 'disetujui' : 'ditolak'}!`,
                 timer: 2000,
                 showConfirmButton: false
             });
