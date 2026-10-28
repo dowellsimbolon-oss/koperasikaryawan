@@ -26,13 +26,12 @@ const dbConfig = {
   port: parseInt(process.env.DB_PORT, 10) || 4000,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'db_koperasi', // Pastikan ini db_koperasi (pakai garis bawah)
+  database: process.env.DB_NAME || 'db_koperasi',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
 };
 
-// SSL Kompatibel untuk TiDB Cloud / Remote DB di Vercel
 if (process.env.DB_HOST && !['localhost', '127.0.0.1'].includes(process.env.DB_HOST)) {
   dbConfig.ssl = { rejectUnauthorized: false };
 }
@@ -56,7 +55,7 @@ const authenticateToken = (req, res, next) => {
 
 // 0. HEALTH CHECK
 app.get(['/', '/api'], (req, res) => {
-  res.json({ message: 'API Backend Koperasi Berhasil Berjalan di Vercel!' });
+  res.json({ message: 'API Backend Koperasi Berhasil Berjalan!' });
 });
 
 // Handler Logika Login
@@ -108,7 +107,7 @@ app.post(['/login', '/api/login', '/auth/login', '/api/auth/login'], handleLogin
 app.get(['/dashboard/summary', '/api/dashboard/summary'], async (req, res) => {
   try {
     const [[savingsRes]] = await db.query('SELECT COALESCE(SUM(pokok + wajib + sukarela), 0) AS totalSavings FROM savings');
-    const [[loansRes]] = await db.query('SELECT COALESCE(SUM(remaining_amount), 0) AS totalLoans FROM loans WHERE status = "APPROVED"');
+    const [[loansRes]] = await db.query('SELECT COALESCE(SUM(remaining_amount), 0) AS totalLoans FROM loans WHERE status IN ("APPROVED", "DISBURSED")');
     const [[membersRes]] = await db.query('SELECT COUNT(*) AS totalMembers FROM members');
 
     res.json({
@@ -255,6 +254,94 @@ app.post(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
     }
 });
 
+// ==========================================
+// ENDPOINT PENCAIRAN SIMPANAN SUKARELA
+// ==========================================
+
+// A. Karyawan Mengajukan Pencairan
+app.post(['/savings/withdraw', '/api/savings/withdraw'], authenticateToken, async (req, res) => {
+    const { amount } = req.body;
+    const memberId = req.user.id;
+
+    try {
+        const numAmount = Number(amount);
+        if (!numAmount || numAmount <= 0) {
+            return res.status(400).json({ success: false, message: 'Nominal pencairan tidak valid!' });
+        }
+
+        const [savings] = await db.query('SELECT sukarela FROM savings WHERE member_id = ?', [memberId]);
+        if (savings.length === 0) return res.status(404).json({ success: false, message: 'Data simpanan tidak ditemukan' });
+
+        const saldoSukarela = Number(savings[0].sukarela || 0);
+        if (numAmount > saldoSukarela) {
+            return res.status(400).json({ success: false, message: `Saldo sukarela Anda tidak cukup. Saldo saat ini: Rp ${saldoSukarela.toLocaleString('id-ID')}` });
+        }
+
+        const [pending] = await db.query("SELECT id FROM savings_withdrawals WHERE member_id = ? AND status = 'PENDING'", [memberId]);
+        if (pending.length > 0) {
+            return res.status(400).json({ success: false, message: 'Anda masih memiliki pengajuan pencairan yang menunggu verifikasi Bendahara.' });
+        }
+
+        const wdId = `WD-${Date.now()}-${memberId}`;
+
+        await db.query(
+            "INSERT INTO savings_withdrawals (id, member_id, jumlah, status) VALUES (?, ?, ?, 'PENDING')",
+            [wdId, memberId, numAmount]
+        );
+
+        res.status(201).json({ success: true, message: 'Pengajuan pencairan berhasil. Silakan tunggu verifikasi Bendahara.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Gagal mengajukan pencairan: ' + error.message });
+    }
+});
+
+// B. Bendahara Menyetujui Pencairan
+app.post(['/savings/withdraw/:id/approve', '/api/savings/withdraw/:id/approve'], authenticateToken, async (req, res) => {
+    const withdrawalId = req.params.id;
+    const connection = await db.getConnection();
+
+    try {
+        await connection.beginTransaction();
+
+        const [withdrawals] = await connection.query("SELECT * FROM savings_withdrawals WHERE id = ? AND status = 'PENDING'", [withdrawalId]);
+        if (withdrawals.length === 0) throw new Error('Pengajuan tidak ditemukan atau sudah diproses.');
+
+        const wd = withdrawals[0];
+
+        await connection.query(
+            "UPDATE savings SET sukarela = sukarela - ? WHERE member_id = ?",
+            [wd.jumlah, wd.member_id]
+        );
+
+        await connection.query("UPDATE savings_withdrawals SET status = 'APPROVED' WHERE id = ?", [withdrawalId]);
+
+        await connection.commit();
+        res.json({ success: true, message: 'Pencairan disetujui dan saldo telah dipotong!' });
+    } catch (error) {
+        await connection.rollback();
+        res.status(500).json({ success: false, message: 'Gagal memproses pencairan: ' + error.message });
+    } finally {
+        connection.release();
+    }
+});
+
+// C. Admin Melihat Daftar Pengajuan
+app.get(['/savings/withdrawals/pending', '/api/savings/withdrawals/pending'], authenticateToken, async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT w.id, w.member_id AS memberId, m.nama, w.jumlah, w.status, w.created_at 
+            FROM savings_withdrawals w
+            JOIN members m ON w.member_id = m.id
+            WHERE w.status = 'PENDING'
+            ORDER BY w.created_at ASC
+        `);
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json([]);
+    }
+});
+
+
 // 4. PINJAMAN (LOANS)
 app.get(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
   try {
@@ -285,7 +372,7 @@ app.post(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
         }
 
          const [activeLoans] = await db.query(
-            "SELECT id FROM loans WHERE member_id = ? AND status IN ('PENDING', 'APPROVED')",
+            "SELECT id FROM loans WHERE member_id = ? AND status IN ('PENDING', 'APPROVED', 'DISBURSED', 'PENDING_PAYOFF')",
             [mId]
         );
 
@@ -342,6 +429,7 @@ app.get(['/loans/pending', '/api/loans/pending'], authenticateToken, async (req,
   }
 });
 
+// Endpoint Approve Pinjaman (Mengubah status jadi APPROVED - Siap Cair)
 app.post(['/loans/approve', '/api/loans/approve'], authenticateToken, async (req, res) => {
     try {
         const loanId = req.body.id || req.body.loanId || req.body.loan_id;
@@ -362,36 +450,30 @@ app.post(['/loans/approve', '/api/loans/approve'], authenticateToken, async (req
             [calculatedRemaining, loanId]
         );
 
-        res.json({ success: true, message: 'Pengajuan pinjaman berhasil disetujui!' });
+        res.json({ success: true, message: 'Pengajuan pinjaman disetujui. Silakan lakukan pencairan dana.' });
     } catch (error) {
         console.error('Approve Loan Error:', error);
         res.status(500).json({ success: false, message: 'Gagal menyetujui pinjaman: ' + error.message });
     }
 });
 
-app.all(['/loans/:id/approve', '/api/loans/:id/approve', '/loans/approve/:id', '/api/loans/approve/:id'], authenticateToken, async (req, res) => {
+// Endpoint Disburse Pinjaman (Pencairan Dana oleh Bendahara)
+app.post(['/loans/:id/disburse', '/api/loans/:id/disburse'], authenticateToken, async (req, res) => {
     try {
         const loanId = req.params.id;
-        if (!loanId) {
-            return res.status(400).json({ success: false, message: 'ID Pinjaman tidak valid!' });
-        }
         
-        const [loans] = await db.query('SELECT tenor, monthly_installment FROM loans WHERE id = ?', [loanId]);
-        if (loans.length === 0) {
-            return res.status(404).json({ success: false, message: 'Data pinjaman tidak ditemukan!' });
-        }
-
-        const loan = loans[0];
-        const calculatedRemaining = Number(loan.monthly_installment) * Number(loan.tenor);
-
-        await db.query(
-            `UPDATE loans SET status = 'APPROVED', remaining_amount = ? WHERE id = ?`,
-            [calculatedRemaining, loanId]
+        const [result] = await db.query(
+            "UPDATE loans SET status = 'DISBURSED' WHERE id = ? AND status = 'APPROVED'",
+            [loanId]
         );
 
-        res.json({ success: true, message: 'Pengajuan pinjaman berhasil disetujui!' });
+        if (result.affectedRows === 0) {
+            return res.status(400).json({ success: false, message: 'Pinjaman belum disetujui atau sudah dicairkan.' });
+        }
+
+        res.json({ success: true, message: 'Dana pinjaman berhasil dicairkan!' });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Gagal menyetujui pinjaman: ' + error.message });
+        res.status(500).json({ success: false, message: 'Gagal mencairkan dana: ' + error.message });
     }
 });
 
@@ -409,32 +491,16 @@ app.post(['/loans/reject', '/api/loans/reject'], authenticateToken, async (req, 
     }
 });
 
-app.all(['/loans/:id/reject', '/api/loans/:id/reject', '/loans/reject/:id', '/api/loans/reject/:id'], authenticateToken, async (req, res) => {
-    try {
-        const loanId = req.params.id;
-        if (!loanId) return res.status(400).json({ success: false, message: 'ID Pinjaman tidak valid!' });
-        
-        const [result] = await db.query(`UPDATE loans SET status = 'REJECTED', remaining_amount = 0 WHERE id = ?`, [loanId]);
-        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Data pinjaman tidak ditemukan!' });
-
-        res.json({ success: true, message: 'Pengajuan pinjaman berhasil ditolak.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Gagal menolak pinjaman: ' + error.message });
-    }
-});
-
-// A. Endpoint Karyawan Mengajukan Pelunasan
+// Endpoint Ajukan Pelunasan (Karyawan)
 app.post(['/loans/:id/request-payoff', '/api/loans/:id/request-payoff'], authenticateToken, async (req, res) => {
     try {
         const loanId = req.params.id;
         
-        // Cek apakah pinjaman ada dan statusnya masih APPROVED
-        const [loans] = await db.query("SELECT * FROM loans WHERE id = ? AND status = 'APPROVED'", [loanId]);
+        const [loans] = await db.query("SELECT * FROM loans WHERE id = ? AND status IN ('APPROVED', 'DISBURSED')", [loanId]);
         if (loans.length === 0) {
             return res.status(400).json({ success: false, message: 'Pinjaman tidak ditemukan atau sudah tidak aktif.' });
         }
 
-        // Ubah status menjadi PENDING_PAYOFF
         await db.query(
             "UPDATE loans SET status = 'PENDING_PAYOFF' WHERE id = ?",
             [loanId]
@@ -446,12 +512,11 @@ app.post(['/loans/:id/request-payoff', '/api/loans/:id/request-payoff'], authent
     }
 });
 
-// B. Endpoint Bendahara Menyetujui Pelunasan
+// Endpoint Setujui Pelunasan (Bendahara)
 app.post(['/loans/:id/approve-payoff', '/api/loans/:id/approve-payoff'], authenticateToken, async (req, res) => {
     try {
         const loanId = req.params.id;
         
-        // Update sisa pinjaman jadi 0 dan status LUNAS
         const [result] = await db.query(
             "UPDATE loans SET remaining_amount = 0, status = 'LUNAS' WHERE id = ?",
             [loanId]
@@ -466,7 +531,6 @@ app.post(['/loans/:id/approve-payoff', '/api/loans/:id/approve-payoff'], authent
         res.status(500).json({ success: false, message: 'Gagal memproses pelunasan: ' + error.message });
     }
 });
-
 
 // 5. PAYROLL DEDUCTION (POTONGAN GAJI)
 app.get(['/payrolls', '/api/payrolls', '/payroll-deductions', '/api/payroll-deductions', '/payroll'], authenticateToken, async (req, res) => {
@@ -502,24 +566,16 @@ app.post([
     const body = req.body || {};
     const periode = body.periode || body.period;
     
-    console.log("=== PROSES PAYROLL DIMULAI ===");
-    console.log("Periode yang diterima:", periode);
-
     if (!periode) {
       return res.status(400).json({ success: false, message: 'Periode pemotongan wajib diisi!' });
     }
 
-    // Perbaikan: Menggunakan db.query langsung untuk memastikan data terbaca
     const [members] = await db.query('SELECT id, gaji_pokok, simpanan_wajib FROM members');
-    
-    console.log("Total anggota ditemukan di DB:", members.length);
-    if (members.length > 0) {
-        console.log("Contoh data anggota pertama:", members[0]);
-    }
 
     for (const member of members) {
+      // Cek pinjaman aktif (status APPROVED atau DISBURSED)
       const [loanRows] = await db.query(
-        "SELECT SUM(monthly_installment) as total_cicilan FROM loans WHERE member_id = ? AND status = 'APPROVED'",
+        "SELECT SUM(monthly_installment) as total_cicilan FROM loans WHERE member_id = ? AND status IN ('APPROVED', 'DISBURSED')",
         [member.id]
       );
       const potCicilan = Number(loanRows[0].total_cicilan || 0);
@@ -531,8 +587,6 @@ app.post([
 
       const payrollId = `PAY-${member.id}-${periode.replace(/\s+/g, '-')}`;
 
-      console.log(`Menghitung ${member.id}: Gaji=${gajiPokok}, PotWajib=${potWajib}, Cicilan=${potCicilan}, Bersih=${gajiBersih}`);
-
       await db.query(
         `INSERT INTO payrolls (id, member_id, periode, gaji_pokok, pot_wajib, pot_cicilan, total_potongan, gaji_bersih) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -542,15 +596,17 @@ app.post([
          gaji_bersih = VALUES(gaji_bersih)`,
         [payrollId, member.id, periode, gajiPokok, potWajib, potCicilan, totalPotongan, gajiBersih]
       );
+
+      // Kurangi sisa pinjaman jika ada cicilan
       if (potCicilan > 0) {
           const [activeLoans] = await db.query(
-              "SELECT id, remaining_amount FROM loans WHERE member_id = ? AND status = 'APPROVED' AND remaining_amount > 0",
+              "SELECT id, remaining_amount FROM loans WHERE member_id = ? AND status IN ('APPROVED', 'DISBURSED') AND remaining_amount > 0",
               [member.id]
           );
 
           for (const loan of activeLoans) {
               const newRemaining = Math.max(0, Number(loan.remaining_amount) - potCicilan);
-              const newStatus = newRemaining === 0 ? 'LUNAS' : 'APPROVED';
+              const newStatus = newRemaining === 0 ? 'LUNAS' : 'DISBURSED';
 
               await db.query(
                   "UPDATE loans SET remaining_amount = ?, status = ? WHERE id = ?",
@@ -560,7 +616,6 @@ app.post([
       }
     }
 
-    console.log("=== PROSES PAYROLL SELESAI ===");
     res.json({ success: true, message: `Pemotongan gaji untuk periode ${periode} berhasil diproses dan diperbarui!` });
   } catch (error) {
     console.error('Payroll Process Error:', error);

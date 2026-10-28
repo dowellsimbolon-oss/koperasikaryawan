@@ -237,7 +237,7 @@ async function renderDashboard() {
         
         const myApprovedLoans = loansList.filter(l => 
             (l.memberId === loggedUser.id || l.member_id === loggedUser.id) && 
-            (l.status === 'APPROVED' || l.status === 'AKTIF')
+            (l.status === 'APPROVED' || l.status === 'DISBURSED' || l.status === 'AKTIF')
         );
 
         let myRemainingLoan = 0;
@@ -330,12 +330,18 @@ async function renderSavings() {
       const nama = s.nama || s.member_name || loggedUser.nama || '-';
       const id = s.memberId || s.member_id || s.id || loggedUser.id || '-';
 
+      // Tampilkan tombol cairkan khusus karyawan jika saldo sukarela > 0
+      let tombolCair = '';
+      if (!admin && sukarela > 0) {
+        tombolCair = `<button onclick="openWithdrawModal(${sukarela})" class="bg-amber-500 text-white px-2 py-1 rounded text-xs ml-2 hover:bg-amber-600">Cairkan</button>`;
+      }
+
       tbody.innerHTML += `
         <tr class="border-b border-slate-100 hover:bg-slate-50">
           <td class="p-3.5 font-medium">${nama} <span class="text-xs text-slate-400">(${id})</span></td>
           <td class="p-3.5">${formatRupiah(pokok)}</td>
           <td class="p-3.5">${formatRupiah(wajib)}</td>
-          <td class="p-3.5">${formatRupiah(sukarela)}</td>
+          <td class="p-3.5">${formatRupiah(sukarela)} ${tombolCair}</td>
           <td class="p-3.5"><strong class="text-emerald-600">${formatRupiah(total)}</strong></td>
         </tr>
       `;
@@ -361,11 +367,11 @@ async function renderLoans() {
     const dataToRender = admin ? loans : loans.filter(l => (l.memberId === loggedUser.id || l.member_id === loggedUser.id));
 
     if (dataToRender.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">Belum ada data pinjaman.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-400">Belum ada data pinjaman.</td></tr>`;
       return;
     }
 
-        dataToRender.forEach(l => {
+    dataToRender.forEach(l => {
       const remaining = Number(l.remaining_amount || l.remaining || 0);
       const statusValue = (l.status || '').toUpperCase();
       let statusHtml = '';
@@ -377,32 +383,34 @@ async function renderLoans() {
       } else if (statusValue === 'PENDING') {
         statusHtml = `<span style="color: #d97706; font-weight: 600;">PENDING</span>`;
         remainingDisplay = '-';
+      } else if (statusValue === 'APPROVED') {
+        statusHtml = `<span style="color: #2563eb; font-weight: 600;">SIAP CAIR</span>`;
+      } else if (statusValue === 'DISBURSED') {
+        statusHtml = `<span style="color: #d97706; font-weight: 600;">AKTIF (CAIR)</span>`;
+      } else if (statusValue === 'PENDING_PAYOFF') {
+        statusHtml = `<span style="color: #d97706; font-weight: 600;">MENUNGGU PELUNASAN</span>`;
       } else if (statusValue === 'LUNAS' || remaining === 0) {
         statusHtml = `<span style="color: #16a34a; font-weight: 600;">LUNAS</span>`;
         remainingDisplay = '-';
-      } else {
-        statusHtml = `<span style="color: #d97706; font-weight: 600;">AKTIF</span>`;
       }
 
       const namaPeminjam = l.nama || l.member_name || loggedUser.name || 'Anggota';
       const idPeminjam = l.memberId || l.member_id || loggedUser.id || '-';
 
-     
       // Logika Tombol Aksi
       let aksiHtml = '-';
       
-      if (statusValue === 'PENDING_PAYOFF') {
-        if (admin) {
-          // Tombol untuk Bendahara jika karyawan mengajukan pelunasan
-          aksiHtml = `<button onclick="approvePayoff('${l.id}')" class="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">Verifikasi Bayar</button>`;
-        } else {
-          // Tampilan Karyawan yang sedang mengajukan
-          aksiHtml = `<span class="text-xs text-slate-500 italic">Menunggu Verifikasi</span>`;
+      if (admin) {
+        if (statusValue === 'APPROVED') {
+          aksiHtml = `<button onclick="disburseLoan('${l.id}')" class="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">Cairkan Dana</button>`;
+        } else if (statusValue === 'PENDING_PAYOFF') {
+          aksiHtml = `<button onclick="approvePayoff('${l.id}')" class="bg-emerald-600 text-white px-3 py-1 rounded text-xs hover:bg-emerald-700">Verifikasi Bayar</button>`;
         }
-      } else if (statusValue === 'APPROVED' && remaining > 0) {
-        // Tombol untuk Karyawan jika pinjaman aktif
-        if (!admin) {
+      } else {
+        if (statusValue === 'DISBURSED' && remaining > 0) {
           aksiHtml = `<button onclick="requestPayoff('${l.id}')" class="bg-amber-500 text-white px-3 py-1 rounded text-xs hover:bg-amber-600">Ajukan Lunasi</button>`;
+        } else if (statusValue === 'PENDING_PAYOFF') {
+          aksiHtml = `<span class="text-xs text-slate-500 italic">Menunggu Verifikasi</span>`;
         }
       }
 
@@ -418,12 +426,11 @@ async function renderLoans() {
         </tr>
       `;
     });
-     } catch (err) { // <-- Ini penutup try-catch (yang tadi hilang)
+  } catch (err) {
     console.error('Error rendering loans:', err);
   }
 }
 
-// --- FUNGSI PAYROLL YANG SUDAH DIPERBAIKI ---
 async function renderPayroll() {
   const admin = typeof isAdminOrTreasurer === 'function' ? isAdminOrTreasurer() : false;
   const loggedUser = JSON.parse(localStorage.getItem('logged_user')) || {};
@@ -438,12 +445,10 @@ async function renderPayroll() {
 
     tbody.innerHTML = '';
     
-    // Filter data
     let dataToRender = admin 
       ? payrolls 
       : payrolls.filter(p => String(p.member_id || p.memberId) === String(loggedUser.id));
 
-    // Khusus Admin: Filter tabel berdasarkan periode yang sedang dipilih di form
     if (admin) {
       const periodInput = document.getElementById('payroll-period');
       if (periodInput && periodInput.value) {
@@ -459,10 +464,8 @@ async function renderPayroll() {
       return;
     }
 
-    // Urutkan data dari periode terbaru
     dataToRender.sort((a, b) => (b.periode || b.period || '').localeCompare(a.periode || a.period || ''));
 
-    // === UPDATE KARTU RINGKASAN GAJI TERAKHIR (Khusus Anggota) ===
     if (!admin && document.getElementById('dash-last-salary')) {
         const latestPayroll = dataToRender[0];
         const gajiBersihTerakhir = Number(latestPayroll.gajiBersih || latestPayroll.gaji_bersih || 0);
@@ -470,7 +473,6 @@ async function renderPayroll() {
         document.getElementById('dash-last-period').innerText = `Periode: ${latestPayroll.periode || latestPayroll.period || '-'}`;
     }
 
-    // Render Tabel (Membedakan antara Admin dan Karyawan)
     dataToRender.forEach(p => {
       const periodeDisplay = p.periode || p.period || '-';
       const namaAnggota = p.nama || p.member_name || loggedUser.name || '-';
@@ -482,7 +484,6 @@ async function renderPayroll() {
       const gajiBersih = Number(p.gajiBersih || p.gaji_bersih || (gajiPokok - totalPotongan));
 
       if (admin) {
-        // Tampilan Admin (Ada Nama Anggota, Tanpa Tombol Aksi)
         tbody.innerHTML += `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-3.5 font-medium">${periodeDisplay}</td>
@@ -495,7 +496,6 @@ async function renderPayroll() {
           </tr>
         `;
       } else {
-        // Tampilan Karyawan (Tanpa Nama, Ada Tombol Detail)
         tbody.innerHTML += `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-3.5 font-medium">${periodeDisplay}</td>
@@ -516,7 +516,6 @@ async function renderPayroll() {
   }
 }
 
-// Fungsi untuk menampilkan Pop-up Slip Gaji
 function showSlipDetail(periode, nama, gajiPokok, potWajib, potCicilan, gajiBersih) {
     Swal.fire({
         title: `Slip Gaji - ${periode}`,
@@ -561,6 +560,9 @@ async function renderAll() {
     ]);
     if (isAdminOrTreasurer()) {
       await loadPendingLoans();
+      if (typeof loadPendingWithdrawals === 'function') {
+          await loadPendingWithdrawals();
+      }
     }
   } catch (err) {
     console.error("Error fetching data:", err);
@@ -570,7 +572,6 @@ async function renderAll() {
 }
 
 // --- FORM HANDLERS ---
-// Handler Simpanan
 const formSavings = document.getElementById('form-add-savings');
 if (formSavings) {
   formSavings.addEventListener('submit', async function(e) {
@@ -624,7 +625,6 @@ if (formSavings) {
   });
 }
 
-// Handler Pinjaman Karyawan
 function calculateLoanPreview() {
   const amount = Number(document.getElementById('loan-amount').value) || 0;
   const tenor = Number(document.getElementById('loan-tenor').value) || 1;
@@ -700,7 +700,6 @@ if (formLoan) {
   });
 }
 
-// Handler Proses Potong Gaji (Admin)
 async function processPayrollDeduction() {
   if (!isAdminOrTreasurer()) {
     return Swal.fire({
@@ -788,7 +787,6 @@ async function processPayrollDeduction() {
   }
 }
 
-// Handler Tambah Anggota Baru (Admin)
 const formAddMember = document.getElementById('form-add-member');
 if (formAddMember) {
   formAddMember.addEventListener('submit', async (e) => {
@@ -858,7 +856,6 @@ if (formAddMember) {
   });
 }
 
-// Handler Persetujuan Pinjaman (Admin)
 let isFetchingLoans = false;
 
 async function loadPendingLoans() {
@@ -926,7 +923,7 @@ async function handleLoanAction(loanId, actionStatus) {
                 showConfirmButton: false
             });
             loadPendingLoans();
-            renderLoans(); // Refresh tabel pinjaman
+            renderLoans(); 
         } else {
             Swal.fire({
                 icon: 'error',
@@ -940,7 +937,6 @@ async function handleLoanAction(loanId, actionStatus) {
     }
 }
 
-// Inisialisasi Awal & Event Listener
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof checkAuth === 'function') checkAuth();
 
@@ -954,9 +950,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof loadPendingLoans === 'function') {
         loadPendingLoans();
     }
+    if (typeof loadPendingWithdrawals === 'function') {
+        loadPendingWithdrawals();
+    }
 });
 
-// Handler Ubah Profil (Karyawan)
 const formUpdateProfile = document.getElementById('form-update-profile');
 
 if (formUpdateProfile) {
@@ -1014,14 +1012,139 @@ if (formUpdateProfile) {
     });
 }
 
-// Expose Fungsi
-window.handleLoanAction = handleLoanAction;
-window.calculateLoanPreview = calculateLoanPreview;
-window.handleLogout = handleLogout;
-window.processPayrollDeduction = processPayrollDeduction;
-window.showSlipDetail = showSlipDetail;
+// === FUNGSI PENCAIRAN SIMPANAN ===
 
-// Fungsi Karyawan Mengajukan Pelunasan
+// 1. Modal Pengajuan (Karyawan)
+async function openWithdrawModal(maxSaldo) {
+    const { value: amount } = await Swal.fire({
+        title: 'Cairkan Simpanan Sukarela',
+        input: 'number',
+        inputLabel: `Maksimal pencairan: ${formatRupiah(maxSaldo)}`,
+        inputPlaceholder: 'Masukkan nominal (Rp)',
+        showCancelButton: true,
+        confirmButtonText: 'Ajukan Pencairan',
+        confirmButtonColor: '#F59E0B',
+        cancelButtonColor: '#4b5563',
+        inputValidator: (value) => {
+            if (!value || value <= 0) return 'Masukkan nominal yang valid!';
+            if (value > maxSaldo) return 'Nominal melebihi saldo sukarela Anda!';
+        }
+    });
+
+    if (amount) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/savings/withdraw`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ amount: Number(amount) })
+            });
+            const result = await res.json();
+
+            if (res.ok) {
+                Swal.fire('Berhasil!', result.message, 'success');
+                renderAll();
+            } else {
+                Swal.fire('Gagal', result.message, 'error');
+            }
+        } catch (err) {
+            Swal.fire('Kesalahan', 'Koneksi server terputus.', 'error');
+        }
+    }
+}
+
+// 2. Tabel Persetujuan (Admin)
+async function loadPendingWithdrawals() {
+    const tbody = document.getElementById('table-pending-withdrawals');
+    if (!tbody) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/savings/withdrawals/pending`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.length > 0) {
+            tbody.innerHTML = data.map(w => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="p-3 font-medium">${w.memberId}</td>
+                    <td class="p-3">${w.nama}</td>
+                    <td class="p-3 font-semibold text-amber-600">${formatRupiah(w.jumlah)}</td>
+                    <td class="p-3 text-center">
+                        <button onclick="approveWithdraw('${w.id}')" class="bg-emerald-600 text-white px-3 py-1 rounded hover:bg-emerald-700">Proses Cair</button>
+                    </td>
+                </tr>
+            `).join('');
+        } else {
+            tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400">Tidak ada pengajuan pencairan simpanan.</td></tr>`;
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+// 3. Fungsi Persetujuan (Admin)
+async function approveWithdraw(id) {
+    const confirm = await Swal.fire({
+        title: 'Proses Pencairan?',
+        text: 'Pastikan Anda sudah menyerahkan uang tunai ke karyawan.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Proses',
+        confirmButtonColor: '#10B981'
+    });
+
+    if (confirm.isConfirmed) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/savings/withdraw/${id}/approve`, {
+                method: 'POST',
+                headers: getAuthHeaders()
+            });
+            const result = await res.json();
+            if (res.ok) {
+                Swal.fire('Berhasil!', result.message, 'success');
+                renderAll();
+            } else {
+                Swal.fire('Gagal', result.message, 'error');
+            }
+        } catch (err) {
+            Swal.fire('Kesalahan', 'Koneksi terputus', 'error');
+        }
+    }
+}
+
+// === FUNGSI PENCAIRAN PINJAMAN ===
+async function disburseLoan(loanId) {
+    const confirm = await Swal.fire({
+        title: 'Cairkan Dana Pinjaman?',
+        text: 'Pastikan Anda sudah menyerahkan uang tunai/transfer kepada karyawan.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#2563eb',
+        cancelButtonColor: '#4b5563',
+        confirmButtonText: 'Ya, Cairkan',
+        cancelButtonText: 'Batal'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/loans/${loanId}/disburse`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const result = await res.json();
+
+        if (res.ok && result.success) {
+            Swal.fire('Berhasil!', result.message, 'success');
+            renderAll();
+        } else {
+            Swal.fire('Gagal', result.message, 'error');
+        }
+    } catch (err) {
+        Swal.fire('Kesalahan', 'Terjadi kesalahan koneksi server', 'error');
+    }
+}
+
+// === FUNGSI PELUNASAN PINJAMAN ===
 async function requestPayoff(loanId) {
     const confirm = await Swal.fire({
         title: 'Ajukan Pelunasan?',
@@ -1054,7 +1177,6 @@ async function requestPayoff(loanId) {
     }
 }
 
-// Fungsi Bendahara Menyetujui Pelunasan
 async function approvePayoff(loanId) {
     const confirm = await Swal.fire({
         title: 'Verifikasi Pembayaran',
@@ -1087,6 +1209,54 @@ async function approvePayoff(loanId) {
     }
 }
 
-// Expose fungsi baru
+// Fungsi Menampilkan Profil User
+function showUserProfile() {
+    const loggedUser = JSON.parse(localStorage.getItem('logged_user'));
+    if (!loggedUser) return;
+
+    Swal.fire({
+        title: 'Profil Karyawan',
+        html: `
+            <div class="flex flex-col items-center mt-4">
+                <div class="w-24 h-24 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white text-4xl font-bold shadow-lg mb-4">
+                    ${loggedUser.name ? loggedUser.name.charAt(0).toUpperCase() : 'U'}
+                </div>
+                <h3 class="text-xl font-bold text-slate-800">${loggedUser.name}</h3>
+                <p class="text-sm text-blue-600 font-semibold mb-4">${loggedUser.role}</p>
+            </div>
+            <hr class="my-4 border-slate-200">
+            <div class="text-left text-sm space-y-3">
+                <div class="flex justify-between">
+                    <span class="text-slate-500">NIK / ID Anggota</span>
+                    <span class="font-semibold text-slate-800">${loggedUser.id}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-500">Username</span>
+                    <span class="font-semibold text-slate-800">${loggedUser.username || loggedUser.name}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-slate-500">Status Akun</span>
+                    <span class="text-emerald-600 font-semibold">Aktif & Terverifikasi</span>
+                </div>
+            </div>
+        `,
+        showCancelButton: true,
+        showConfirmButton: false,
+        cancelButtonText: 'Tutup Profil',
+        cancelButtonColor: '#64748b',
+        padding: '1.5rem'
+    });
+}
+
+// Expose Fungsi
+window.handleLoanAction = handleLoanAction;
+window.calculateLoanPreview = calculateLoanPreview;
+window.showUserProfile = showUserProfile;
+window.handleLogout = handleLogout;
+window.processPayrollDeduction = processPayrollDeduction;
+window.showSlipDetail = showSlipDetail;
 window.requestPayoff = requestPayoff;
 window.approvePayoff = approvePayoff;
+window.openWithdrawModal = openWithdrawModal;
+window.approveWithdraw = approveWithdraw;
+window.disburseLoan = disburseLoan;
