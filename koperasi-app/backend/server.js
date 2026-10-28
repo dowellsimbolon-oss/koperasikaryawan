@@ -284,6 +284,18 @@ app.post(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Data pinjaman tidak lengkap!' });
         }
 
+         const [activeLoans] = await db.query(
+            "SELECT id FROM loans WHERE member_id = ? AND status IN ('PENDING', 'APPROVED')",
+            [mId]
+        );
+
+        if (activeLoans.length > 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Gagal! Anda masih memiliki pinjaman yang sedang berjalan atau menunggu persetujuan. Silakan lunasi terlebih dahulu.' 
+            });
+        }
+
         const numAmount = Number(amount);
         const numTenor = Number(tenor);
         
@@ -411,6 +423,51 @@ app.all(['/loans/:id/reject', '/api/loans/:id/reject', '/loans/reject/:id', '/ap
     }
 });
 
+// A. Endpoint Karyawan Mengajukan Pelunasan
+app.post(['/loans/:id/request-payoff', '/api/loans/:id/request-payoff'], authenticateToken, async (req, res) => {
+    try {
+        const loanId = req.params.id;
+        
+        // Cek apakah pinjaman ada dan statusnya masih APPROVED
+        const [loans] = await db.query("SELECT * FROM loans WHERE id = ? AND status = 'APPROVED'", [loanId]);
+        if (loans.length === 0) {
+            return res.status(400).json({ success: false, message: 'Pinjaman tidak ditemukan atau sudah tidak aktif.' });
+        }
+
+        // Ubah status menjadi PENDING_PAYOFF
+        await db.query(
+            "UPDATE loans SET status = 'PENDING_PAYOFF' WHERE id = ?",
+            [loanId]
+        );
+
+        res.json({ success: true, message: 'Pengajuan pelunasan berhasil. Silakan serahkan pembayaran ke Bendahara.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Gagal mengajukan pelunasan: ' + error.message });
+    }
+});
+
+// B. Endpoint Bendahara Menyetujui Pelunasan
+app.post(['/loans/:id/approve-payoff', '/api/loans/:id/approve-payoff'], authenticateToken, async (req, res) => {
+    try {
+        const loanId = req.params.id;
+        
+        // Update sisa pinjaman jadi 0 dan status LUNAS
+        const [result] = await db.query(
+            "UPDATE loans SET remaining_amount = 0, status = 'LUNAS' WHERE id = ?",
+            [loanId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'Data pinjaman tidak ditemukan!' });
+        }
+
+        res.json({ success: true, message: 'Pembayaran diterima. Pinjaman telah lunas!' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Gagal memproses pelunasan: ' + error.message });
+    }
+});
+
+
 // 5. PAYROLL DEDUCTION (POTONGAN GAJI)
 app.get(['/payrolls', '/api/payrolls', '/payroll-deductions', '/api/payroll-deductions', '/payroll'], authenticateToken, async (req, res) => {
   try {
@@ -485,6 +542,22 @@ app.post([
          gaji_bersih = VALUES(gaji_bersih)`,
         [payrollId, member.id, periode, gajiPokok, potWajib, potCicilan, totalPotongan, gajiBersih]
       );
+      if (potCicilan > 0) {
+          const [activeLoans] = await db.query(
+              "SELECT id, remaining_amount FROM loans WHERE member_id = ? AND status = 'APPROVED' AND remaining_amount > 0",
+              [member.id]
+          );
+
+          for (const loan of activeLoans) {
+              const newRemaining = Math.max(0, Number(loan.remaining_amount) - potCicilan);
+              const newStatus = newRemaining === 0 ? 'LUNAS' : 'APPROVED';
+
+              await db.query(
+                  "UPDATE loans SET remaining_amount = ?, status = ? WHERE id = ?",
+                  [newRemaining, newStatus, loan.id]
+              );
+          }
+      }
     }
 
     console.log("=== PROSES PAYROLL SELESAI ===");

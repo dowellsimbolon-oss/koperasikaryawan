@@ -365,7 +365,7 @@ async function renderLoans() {
       return;
     }
 
-    dataToRender.forEach(l => {
+        dataToRender.forEach(l => {
       const remaining = Number(l.remaining_amount || l.remaining || 0);
       const statusValue = (l.status || '').toUpperCase();
       let statusHtml = '';
@@ -377,14 +377,34 @@ async function renderLoans() {
       } else if (statusValue === 'PENDING') {
         statusHtml = `<span style="color: #d97706; font-weight: 600;">PENDING</span>`;
         remainingDisplay = '-';
+      } else if (statusValue === 'LUNAS' || remaining === 0) {
+        statusHtml = `<span style="color: #16a34a; font-weight: 600;">LUNAS</span>`;
+        remainingDisplay = '-';
       } else {
-        statusHtml = `<span style="color: ${remaining === 0 ? '#16a34a' : '#d97706'}; font-weight: 600;">
-          ${remaining === 0 ? 'LUNAS' : 'AKTIF'}
-        </span>`;
+        statusHtml = `<span style="color: #d97706; font-weight: 600;">AKTIF</span>`;
       }
 
       const namaPeminjam = l.nama || l.member_name || loggedUser.name || 'Anggota';
       const idPeminjam = l.memberId || l.member_id || loggedUser.id || '-';
+
+     
+      // Logika Tombol Aksi
+      let aksiHtml = '-';
+      
+      if (statusValue === 'PENDING_PAYOFF') {
+        if (admin) {
+          // Tombol untuk Bendahara jika karyawan mengajukan pelunasan
+          aksiHtml = `<button onclick="approvePayoff('${l.id}')" class="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">Verifikasi Bayar</button>`;
+        } else {
+          // Tampilan Karyawan yang sedang mengajukan
+          aksiHtml = `<span class="text-xs text-slate-500 italic">Menunggu Verifikasi</span>`;
+        }
+      } else if (statusValue === 'APPROVED' && remaining > 0) {
+        // Tombol untuk Karyawan jika pinjaman aktif
+        if (!admin) {
+          aksiHtml = `<button onclick="requestPayoff('${l.id}')" class="bg-amber-500 text-white px-3 py-1 rounded text-xs hover:bg-amber-600">Ajukan Lunasi</button>`;
+        }
+      }
 
       tbody.innerHTML += `
         <tr class="border-b border-slate-100">
@@ -394,10 +414,11 @@ async function renderLoans() {
           <td class="p-3.5">${formatRupiah(l.monthly_installment || l.monthly || 0)}</td>
           <td class="p-3.5 font-medium">${remainingDisplay}</td>
           <td class="p-3.5">${statusHtml}</td>
+          <td class="p-3.5 text-center">${aksiHtml}</td>
         </tr>
       `;
     });
-  } catch (err) {
+     } catch (err) { // <-- Ini penutup try-catch (yang tadi hilang)
     console.error('Error rendering loans:', err);
   }
 }
@@ -999,3 +1020,73 @@ window.calculateLoanPreview = calculateLoanPreview;
 window.handleLogout = handleLogout;
 window.processPayrollDeduction = processPayrollDeduction;
 window.showSlipDetail = showSlipDetail;
+
+// Fungsi Karyawan Mengajukan Pelunasan
+async function requestPayoff(loanId) {
+    const confirm = await Swal.fire({
+        title: 'Ajukan Pelunasan?',
+        text: 'Pastikan Anda sudah menyiapkan uang dan akan menyerahkannya ke Bendahara.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#F59E0B',
+        cancelButtonColor: '#4b5563',
+        confirmButtonText: 'Ya, Ajukan',
+        cancelButtonText: 'Batal'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/loans/${loanId}/request-payoff`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const result = await res.json();
+
+        if (res.ok && result.success) {
+            Swal.fire('Berhasil!', result.message, 'success');
+            renderAll(); 
+        } else {
+            Swal.fire('Gagal', result.message, 'error');
+        }
+    } catch (err) {
+        Swal.fire('Kesalahan', 'Terjadi kesalahan koneksi server', 'error');
+    }
+}
+
+// Fungsi Bendahara Menyetujui Pelunasan
+async function approvePayoff(loanId) {
+    const confirm = await Swal.fire({
+        title: 'Verifikasi Pembayaran',
+        text: 'Apakah Anda sudah menerima uang pelunasan dari karyawan ini?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#10B981',
+        cancelButtonColor: '#EF4444',
+        confirmButtonText: 'Ya, Uang Diterima',
+        cancelButtonText: 'Batal'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/loans/${loanId}/approve-payoff`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const result = await res.json();
+
+        if (res.ok && result.success) {
+            Swal.fire('Berhasil!', result.message, 'success');
+            renderAll();
+        } else {
+            Swal.fire('Gagal', result.message, 'error');
+        }
+    } catch (err) {
+        Swal.fire('Kesalahan', 'Terjadi kesalahan koneksi server', 'error');
+    }
+}
+
+// Expose fungsi baru
+window.requestPayoff = requestPayoff;
+window.approvePayoff = approvePayoff;
