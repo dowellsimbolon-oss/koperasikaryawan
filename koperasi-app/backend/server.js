@@ -133,8 +133,9 @@ app.get(['/members', '/api/members'], authenticateToken, async (req, res) => {
 app.post(['/members', '/api/members'], authenticateToken, async (req, res) => {
     const { nik, nama, dept, gaji_pokok, username, password, role } = req.body;
     
-    if (!nik || !nama) {
-        return res.status(400).json({ success: false, message: 'NIK dan Nama wajib diisi!' });
+    // Validasi input wajib
+    if (!nik || !nama || !username || !password) {
+        return res.status(400).json({ success: false, message: 'NIK, Nama, Username, dan Password wajib diisi!' });
     }
 
     const connection = await db.getConnection();
@@ -142,6 +143,7 @@ app.post(['/members', '/api/members'], authenticateToken, async (req, res) => {
     try {
         await connection.beginTransaction();
 
+        // 1. Generate ID Anggota Baru (KOP-XXX)
         const [lastMember] = await connection.query(`
             SELECT id FROM members 
             WHERE id LIKE 'KOP-%' 
@@ -157,16 +159,23 @@ app.post(['/members', '/api/members'], authenticateToken, async (req, res) => {
         }
         const id = `KOP-${String(nextIdNum).padStart(3, '0')}`;
 
+        // 2. Simpan ke tabel members
         await connection.query(
             'INSERT INTO members (id, nik, nama, dept, gaji_pokok) VALUES (?, ?, ?, ?, ?)',
             [id, nik, nama, dept, gaji_pokok]
         );
 
+        // 3. ENKRIPSI PASSWORD MENGGUNAKAN BCRYPT
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // 4. Simpan ke tabel users dengan password yang sudah di-hash
         await connection.query(
             'INSERT INTO users (id, username, password, name, role) VALUES (?, ?, ?, ?, ?)',
-            [id, username, password, nama, role || 'Karyawan / Anggota']
+            [id, username, hashedPassword, nama, role || 'Karyawan / Anggota']
         );
 
+        // 5. Buat baris awal di tabel savings
         await connection.query(
             'INSERT INTO savings (member_id, pokok, wajib, sukarela) VALUES (?, 0, 0, 0)',
             [id]
@@ -184,7 +193,7 @@ app.post(['/members', '/api/members'], authenticateToken, async (req, res) => {
         console.error('TiDB Error:', error);
 
         if (error.code === 'ER_DUP_ENTRY' || error.message.includes('Duplicate entry')) {
-            return res.status(400).json({ success: false, message: `NIK ${nik} sudah terdaftar di sistem!` });
+            return res.status(400).json({ success: false, message: `NIK atau Username sudah terdaftar di sistem!` });
         }
 
         res.status(500).json({ success: false, message: 'Gagal menambahkan anggota: ' + error.message });
@@ -636,7 +645,15 @@ app.put(['/users/profile', '/api/users/profile'], authenticateToken, async (req,
 
         const user = users[0];
         
-        if (oldPassword !== user.password) {
+        // 1. Cek password lama (mendukung password lama yang belum ter-hash)
+        let isOldPassValid = false;
+        if (user.password && (user.password.startsWith('$2b$') || user.password.startsWith('$2a$'))) {
+            isOldPassValid = await bcrypt.compare(oldPassword, user.password);
+        } else {
+            isOldPassValid = (oldPassword === user.password);
+        }
+
+        if (!isOldPassValid) {
             return res.status(400).json({ success: false, message: 'Password lama salah!' });
         }
 
@@ -651,8 +668,13 @@ app.put(['/users/profile', '/api/users/profile'], authenticateToken, async (req,
         }
         
         if (newPassword && newPassword.trim() !== '') {
+            
+            // 2. ENKRIPSI PASSWORD BARU MENGGUNAKAN BCRYPT
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(newPassword.trim(), salt);
+            
             updateQuery += 'password = ?, ';
-            params.push(newPassword.trim());
+            params.push(hashedPassword); // Masukkan password yang sudah di-hash
             hasChange = true;
         }
 

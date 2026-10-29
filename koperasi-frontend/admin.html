@@ -23,6 +23,19 @@
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+         @media print {
+        /* Sembunyikan sidebar, header, dan tombol */
+        aside, button, #payroll-action-section, .bg-white > div:first-child {
+            display: none !important;
+        }
+        /* Lebarkan konten */
+        body { background: white !important; }
+        main { padding: 0 !important; overflow: visible !important; }
+        .bg-white { box-shadow: none !important; border: none !important; padding: 0 !important; }
+        table { width: 100% !important; border-collapse: collapse !important; }
+        th, td { border: 1px solid #000 !important; padding: 8px !important; font-size: 12px; }
+    }
     </style>
 </head>
 <body class="bg-slate-100 font-sans antialiased text-slate-800">
@@ -239,7 +252,13 @@
                 </div>
 
                 <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-200/60">
-                    <h3 class="text-lg font-bold text-slate-900 mb-4">Daftar Akumulasi Simpanan</h3>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold text-slate-900">Daftar Akumulasi Simpanan</h3>
+                        <button onclick="printReport('savings')" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 flex items-center shadow-sm">
+                            🖨️ Cetak Laporan
+                        </button>
+                    </div>
+                    
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse text-sm">
                             <thead>
@@ -317,7 +336,13 @@
                 </div>
 
                 <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-200/60">
-                    <h3 class="text-lg font-bold text-slate-900 mb-4">Riwayat Slip Gaji & Potongan</h3>
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-slate-900">Riwayat Slip Gaji & Potongan</h3>
+                    <button onclick="printReport('payroll')" class="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 flex items-center shadow-sm">
+                🖨️ Cetak Laporan
+                </button>
+                </div>
+
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse text-sm">
                             <thead>

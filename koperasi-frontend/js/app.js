@@ -1257,6 +1257,28 @@ function showUserProfile() {
     });
 }
 
+// Fungsi Cetak Laporan
+function printReport(type) {
+    // Simpan judul asli dokumen
+    const originalTitle = document.title;
+    
+    // Ubah judul dokumen agar menjadi nama file PDF/Print
+    if (type === 'savings') {
+        document.title = 'Laporan_Simpanan_Koperasi_TMA';
+    } else if (type === 'payroll') {
+        document.title = 'Laporan_Gaji_Koperasi_TMA';
+    }
+
+    // Panggil dialog print browser
+    window.print();
+
+    // Kembalikan judul semula setelah print selesai/dibatalkan
+    setTimeout(() => {
+        document.title = originalTitle;
+    }, 1000);
+}
+
+
 // Expose Fungsi
 window.handleLoanAction = handleLoanAction;
 window.calculateLoanPreview = calculateLoanPreview;
@@ -1269,3 +1291,4 @@ window.approvePayoff = approvePayoff;
 window.openWithdrawModal = openWithdrawModal;
 window.approveWithdraw = approveWithdraw;
 window.disburseLoan = disburseLoan;
+window.printReport = printReport;
