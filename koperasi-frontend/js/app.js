@@ -1278,6 +1278,16 @@ function printReport(type) {
     }, 1000);
 }
 
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar.classList.contains('hidden')) {
+        sidebar.classList.remove('hidden');
+        sidebar.classList.add('flex');
+    } else {
+        sidebar.classList.add('hidden');
+        sidebar.classList.remove('flex');
+    }
+}
 
 // Expose Fungsi
 window.handleLoanAction = handleLoanAction;
@@ -1292,3 +1302,4 @@ window.openWithdrawModal = openWithdrawModal;
 window.approveWithdraw = approveWithdraw;
 window.disburseLoan = disburseLoan;
 window.printReport = printReport;
+window.toggleSidebar = toggleSidebar; 
