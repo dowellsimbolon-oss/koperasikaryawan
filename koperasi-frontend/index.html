@@ -9,7 +9,18 @@
     <style>
         .tab-content.active { display: block; }
         .tab-content { display: none; }
-        .nav-btn.active { background-color: #2563eb; color: white; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3); }
+        
+        /* CSS untuk Menu Aktif */
+        .nav-btn.active { 
+            background-color: #2563eb; 
+            color: white; 
+            box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3); 
+        }
+
+        .nav-btn.active:hover {
+    background-color: #2563eb !important; 
+    color: white !important;
+}
         
         /* Background Utama Halaman Login */
         .bg-login-container {
@@ -104,7 +115,7 @@
                     </div>
                 </div>
                 
-               <!-- User Profile Badge (Bisa Diklik) -->
+                <!-- User Profile Badge (Bisa Diklik) -->
                 <div onclick="showUserProfile()" class="mt-6 p-3.5 bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 rounded-2xl flex items-center space-x-3 shadow-inner cursor-pointer hover:bg-slate-700 transition">
                     <div id="user-avatar" class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center font-bold text-base shadow text-white">U</div>
                     <div class="overflow-hidden">
@@ -256,7 +267,7 @@
                                     <th class="p-3.5">Cicilan / Bulan</th>
                                     <th class="p-3.5">Sisa Tagihan</th>
                                     <th class="p-3.5">Status</th>
-                                    <th class="p-3.5 text-center">Aksi</th> <!-- KOLOM AKSI UNTUK TOMBOL LUNASI -->
+                                    <th class="p-3.5 text-center">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="loans-tbody"></tbody>
@@ -288,7 +299,7 @@
                                     <th class="p-3.5">Pot. Cicilan</th>
                                     <th class="p-3.5">Total Potongan</th>
                                     <th class="p-3.5">Gaji Bersih</th>
-                                    <th class="p-3.5 text-center">Aksi</th> <!-- KOLOM AKSI UNTUK DETAIL -->
+                                    <th class="p-3.5 text-center">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="payroll-tbody">
