@@ -183,6 +183,12 @@ function switchTab(tabId, btnElement) {
   if (targetTab) targetTab.classList.add('active');
   if (btnElement) btnElement.classList.add('active');
 
+const sidebar = document.getElementById('sidebar');
+  if (sidebar && window.innerWidth < 768) { // 768px adalah batas ukuran tablet/HP
+    sidebar.classList.add('hidden');
+    sidebar.classList.remove('flex');
+  }
+
   renderAll();
 }
 
@@ -1288,6 +1294,19 @@ function toggleSidebar() {
         sidebar.classList.remove('flex');
     }
 }
+
+document.addEventListener('click', function(event) {
+    const sidebar = document.getElementById('sidebar');
+    const menuButton = document.querySelector('button[onclick="toggleSidebar()"]');
+    
+    // Jika sidebar sedang terbuka, dan yang diklik bukan sidebar dan bukan tombol menu
+    if (sidebar && !sidebar.classList.contains('hidden') && 
+        !sidebar.contains(event.target) && 
+        (menuButton && !menuButton.contains(event.target))) {
+        sidebar.classList.add('hidden');
+        sidebar.classList.remove('flex');
+    }
+});
 
 // Expose Fungsi
 window.handleLoanAction = handleLoanAction;
