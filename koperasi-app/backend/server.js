@@ -513,7 +513,7 @@ app.post(['/loans/:id/disburse', '/api/loans/:id/disburse'], authenticateToken, 
     }
 });
 
-app.post(['/loans/reject', '/api/loans/reject'], authenticateToken, async (req, res) => {
+app.post(['/loans/reject', '/api/loans/reject'], authenticateToken, authorizeChairman, async (req, res) => {
     try {
         const loanId = req.body.id || req.body.loanId || req.body.loan_id;
         if (!loanId) return res.status(400).json({ success: false, message: 'ID Pinjaman tidak disertakan!' });
