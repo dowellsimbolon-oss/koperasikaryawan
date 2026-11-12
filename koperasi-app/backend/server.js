@@ -20,13 +20,15 @@ app.use(express.urlencoded({ extended: true }));
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'koperasi_secret_key_2026';
 
-// 2. KONFIGURASI DATABASE MYSQL / TIDB CLOUD
 const dbConfig = {
   host: process.env.DB_HOST,
   port: parseInt(process.env.DB_PORT, 10) || 4000,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'db_koperasi',
+  // Jika NODE_ENV adalah 'test', gunakan database test
+  database: process.env.NODE_ENV === 'test' 
+    ? 'db_koperasi_test' 
+    : (process.env.DB_NAME || 'db_koperasi'),
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
@@ -104,7 +106,7 @@ async function handleLogin(req, res) {
 app.post(['/login', '/api/login', '/auth/login', '/api/auth/login'], handleLogin);
 
 // 1. DASHBOARD SUMMARY
-app.get(['/dashboard/summary', '/api/dashboard/summary'], async (req, res) => {
+app.get(['/dashboard/summary', '/api/dashboard/summary'], authenticateToken, async (req, res) => {
   try {
     const [[savingsRes]] = await db.query('SELECT COALESCE(SUM(pokok + wajib + sukarela), 0) AS totalSavings FROM savings');
     const [[loansRes]] = await db.query('SELECT COALESCE(SUM(remaining_amount), 0) AS totalLoans FROM loans WHERE status IN ("APPROVED", "DISBURSED")');
@@ -701,7 +703,7 @@ app.use((err, req, res, next) => {
 });
 
 // Menjalankan listener lokal
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, '127.0.0.1', () => {
     console.log(`Server Backend Koperasi berjalan di http://localhost:${PORT}`);
   });
