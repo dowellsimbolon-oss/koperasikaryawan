@@ -20,6 +20,7 @@ app.use(express.urlencoded({ extended: true }));
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'koperasi_secret_key_2026';
 
+// 2. KONFIGURASI DATABASE MYSQL / TIDB CLOUD
 const dbConfig = {
   host: process.env.DB_HOST,
   port: parseInt(process.env.DB_PORT, 10) || 4000,
@@ -51,6 +52,30 @@ const authenticateToken = (req, res, next) => {
     req.user = user;
     next();
   });
+};
+
+// Middleware Khusus Admin
+const authorizeAdmin = (req, res, next) => {
+    if (!req.user.role.toLowerCase().includes('admin')) {
+        return res.status(403).json({ success: false, message: 'Akses ditolak. Fitur ini khusus Admin.' });
+    }
+    next();
+};
+
+// Middleware Khusus Bendahara
+const authorizeTreasurer = (req, res, next) => {
+    if (!req.user.role.toLowerCase().includes('bendahara')) {
+        return res.status(403).json({ success: false, message: 'Akses ditolak. Fitur ini khusus Bendahara.' });
+    }
+    next();
+};
+
+// Middleware Khusus Pengurus
+const authorizeChairman = (req, res, next) => {
+    if (!req.user.role.toLowerCase().includes('pengurus')) {
+        return res.status(403).json({ success: false, message: 'Akses ditolak. Fitur ini khusus Pengurus.' });
+    }
+    next();
 };
 
 // ================= API ENDPOINTS =================
@@ -132,7 +157,7 @@ app.get(['/members', '/api/members'], authenticateToken, async (req, res) => {
   }
 });
 
-app.post(['/members', '/api/members'], authenticateToken, async (req, res) => {
+app.post(['/members', '/api/members'], authenticateToken, authorizeAdmin, async (req, res) => {
     const { nik, nama, dept, gaji_pokok, username, password, role } = req.body;
     
     // Validasi input wajib
@@ -441,7 +466,7 @@ app.get(['/loans/pending', '/api/loans/pending'], authenticateToken, async (req,
 });
 
 // Endpoint Approve Pinjaman (Mengubah status jadi APPROVED - Siap Cair)
-app.post(['/loans/approve', '/api/loans/approve'], authenticateToken, async (req, res) => {
+app.post(['/loans/approve', '/api/loans/approve'], authenticateToken, authorizeChairman, async (req, res) => {
     try {
         const loanId = req.body.id || req.body.loanId || req.body.loan_id;
         if (!loanId) {
@@ -469,7 +494,7 @@ app.post(['/loans/approve', '/api/loans/approve'], authenticateToken, async (req
 });
 
 // Endpoint Disburse Pinjaman (Pencairan Dana oleh Bendahara)
-app.post(['/loans/:id/disburse', '/api/loans/:id/disburse'], authenticateToken, async (req, res) => {
+app.post(['/loans/:id/disburse', '/api/loans/:id/disburse'], authenticateToken, authorizeTreasurer, async (req, res) => {
     try {
         const loanId = req.params.id;
         
@@ -572,7 +597,7 @@ app.post([
   '/api/payrolls/process',
   '/payroll-deductions',
   '/api/payroll-deductions'
-], authenticateToken, async (req, res) => {
+], authenticateToken, authorizeTreasurer, async (req, res) => {
   try {
     const body = req.body || {};
     const periode = body.periode || body.period;
