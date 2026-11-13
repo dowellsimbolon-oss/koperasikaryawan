@@ -97,12 +97,25 @@ function checkAuth() {
 
 function adjustUIByRole(loggedUser) {
   const admin = isAdminOrTreasurer();
+  const menuTitle = document.getElementById('menu-title');
+if (menuTitle) {
+    if (isAdminOnly()) {
+        menuTitle.innerText = 'Dashboard Admin';
+    } else if (isTreasurerOnly()) {
+        menuTitle.innerText = 'Dashboard Bendahara';
+    } else if (isChairmanOnly()) {
+        menuTitle.innerText = 'Dashboard Pengurus';
+    } else {
+        menuTitle.innerText = 'Dashboard Karyawan'; 
+    }
+  }
   
   const cardAddSavings = document.getElementById('card-add-savings');
   const payrollActionSection = document.getElementById('payroll-action-section');
   const formAddMemberContainer = document.getElementById('form-add-member-container');
 
-  if (cardAddSavings) cardAddSavings.style.display = admin ? 'block' : 'none';
+  // Form Tambah Setoran Hanya untuk Bendahara
+if (cardAddSavings) cardAddSavings.style.display = isTreasurerOnly() ? 'block' : 'none';
   
   // Form Payroll Hanya untuk Bendahara
   if (payrollActionSection) payrollActionSection.style.display = isTreasurerOnly() ? 'block' : 'none';
@@ -117,9 +130,31 @@ function adjustUIByRole(loggedUser) {
   }
   
   // Sembunyikan tombol cetak laporan jika bukan pengurus
-    const btnPrintReport = document.getElementById('btn-print-report');
-    if (btnPrintReport) btnPrintReport.style.display = isChairmanOnly() ? 'flex' : 'none';
+    const btnPrintSavings = document.getElementById('btn-print-savings');
+  const btnPrintPayroll = document.getElementById('btn-print-payroll');
+  const displayPrint = isChairmanOnly() ? 'flex' : 'none';
+  if (btnPrintSavings) btnPrintSavings.style.display = displayPrint;
+  if (btnPrintPayroll) btnPrintPayroll.style.display = displayPrint;
 
+      // Sembunyikan tabel persetujuan pinjaman jika bukan pengurus
+  const containerPendingLoans = document.getElementById('container-pending-loans');
+  if (containerPendingLoans) containerPendingLoans.style.display = isChairmanOnly() ? 'block' : 'none';
+
+    // Sembunyikan tabel persetujuan pencairan simpanan jika bukan bendahara
+  const containerPendingWithdrawals = document.getElementById('container-pending-withdrawals');
+  if (containerPendingWithdrawals) containerPendingWithdrawals.style.display = isTreasurerOnly() ? 'block' : 'none';
+
+    // Sembunyikan kolom Aksi di tabel pinjaman jika bukan Pengurus/Bendahara
+  const thActionLoans = document.getElementById('th-action-loans');
+  if (thActionLoans) thActionLoans.style.display = (isChairmanOnly() || isTreasurerOnly()) ? 'table-cell' : 'none';
+
+  // Sembunyikan tabel tunggakan jika bukan pengurus
+  const containerOverdueLoans = document.getElementById('container-overdue-loans');
+  if (containerOverdueLoans) containerOverdueLoans.style.display = isChairmanOnly() ? 'block' : 'none';
+
+  // Hanya Bendahara yang bisa melihat menu Buku Kas
+    const navCashFlow = document.querySelector('button[onclick="switchTab(\'cashflow\', this)"]');
+  if (navCashFlow) navCashFlow.style.display = isTreasurerOnly() ? 'flex' : 'none';
 }
 
 // Form Submit Login
@@ -237,24 +272,38 @@ async function renderDashboard() {
         if (elMembers) elMembers.innerText = `${summary.totalMembers} Karyawan`;
       }
 
-      const resMembers = await fetch(`${API_BASE_URL}/members`, { headers: getAuthHeaders() });
+            const resMembers = await fetch(`${API_BASE_URL}/members`, { headers: getAuthHeaders() });
       if (resMembers.ok) {
         const members = await resMembers.json();
         const tbody = document.getElementById('member-list-tbody');
         if (tbody) {
           tbody.innerHTML = '';
+          
+          // Perhatikan: perulangan forEach harus ada di sini
           members.forEach(m => {
+            const isInactive = m.username && m.username.startsWith('nonaktif_'); 
+            
             tbody.innerHTML += `
               <tr>
                 <td><strong>${m.id}</strong></td>
-                <td>${m.nama}</td>
+                <td>${m.nama} ${isInactive ? '<span class="text-xs text-red-500">(Nonaktif)</span>' : ''}</td>
                 <td>${m.dept}</td>
                 <td>${formatRupiah(m.gajiPokok || m.gaji_pokok)}</td>
+                <td class="text-center space-x-1">
+                    ${isAdminOnly() ? `
+                        <button onclick="resetPassword('${m.id}', '${m.nama}')" class="bg-amber-100 text-amber-700 hover:bg-amber-200 px-2 py-1 rounded text-xs font-semibold">Reset Pass</button>
+                        <button onclick="toggleAccountStatus('${m.id}', '${m.nama}', '${m.username || ''}')" class="bg-slate-100 text-slate-700 hover:bg-slate-200 px-2 py-1 rounded text-xs font-semibold">
+                            ${isInactive ? 'Aktifkan' : 'Nonaktifkan'}
+                        </button>
+                    ` : '-'}
+                </td>
               </tr>
             `;
-          });
+          }); 
+          
         }
       }
+      
     } else {
       const [resSavings, resLoans] = await Promise.all([
         fetch(`${API_BASE_URL}/savings`, { headers: getAuthHeaders() }),
@@ -437,6 +486,9 @@ async function renderLoans() {
         }
       }
 
+       // Tampilkan kolom aksi hanya untuk pengurus dan bendahara
+      const showActionCol = isChairmanOnly() || isTreasurerOnly();
+      
       tbody.innerHTML += `
         <tr class="border-b border-slate-100 hover:bg-slate-50">
           <td class="p-3.5">${namaPeminjam} (${idPeminjam})</td>
@@ -445,12 +497,66 @@ async function renderLoans() {
           <td class="p-3.5">${formatRupiah(l.monthly_installment || l.monthly || 0)}</td>
           <td class="p-3.5 font-medium">${remainingDisplay}</td>
           <td class="p-3.5">${statusHtml}</td>
-          <td class="p-3.5 text-center">${aksiHtml}</td>
+          ${showActionCol ? `<td class="p-3.5 text-center">${aksiHtml}</td>` : ''}
         </tr>
       `;
     });
   } catch (err) {
     console.error('Error rendering loans:', err);
+  }
+}
+
+// Fungsi untuk menampilkan pinjaman yang menunggak (Khusus Pengurus)
+async function renderOverdueLoans() {
+  const tbody = document.getElementById('overdue-loans-tbody');
+  if (!tbody) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/loans`, { headers: getAuthHeaders() });
+    if (!res.ok) return;
+
+    const loans = await res.json();
+    
+    // Filter: Hanya pinjaman aktif (DISBURSED) yang sisa tagihannya > 0
+    const overdueLoans = loans.filter(l => {
+        const status = (l.status || '').toUpperCase();
+        const remaining = Number(l.remaining_amount || l.remaining || 0);
+        return (status === 'DISBURSED' || status === 'APPROVED') && remaining > 0;
+    });
+
+    tbody.innerHTML = '';
+
+    if (overdueLoans.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-emerald-600 font-semibold">🎉 Tidak ada tunggakan pinjaman. Semua lunas!</td></tr>`;
+        return;
+    }
+
+    overdueLoans.forEach(l => {
+      const remaining = Number(l.remaining_amount || l.remaining || 0);
+      const namaPeminjam = l.nama || l.member_name || 'Anggota';
+      const idPeminjam = l.memberId || l.member_id || '-';
+
+       let lamaMenunggak = 'Baru';
+      if (l.created_at) {
+          const startDate = new Date(l.created_at);
+          const currentDate = new Date();
+          const diffMonths = (currentDate.getFullYear() - startDate.getFullYear()) * 12 + (currentDate.getMonth() - startDate.getMonth());
+          lamaMenunggak = diffMonths > 0 ? `${diffMonths} Bulan` : '< 1 Bulan';
+      }
+      
+      tbody.innerHTML += `
+        <tr class="border-b border-slate-100 hover:bg-slate-50">
+          <td class="p-3.5">${namaPeminjam} (${idPeminjam})</td>
+          <td class="p-3.5 font-bold text-rose-600">${formatRupiah(remaining)}</td>
+          <td class="p-3.5">${formatRupiah(l.monthly_installment || l.monthly || 0)}</td>
+           <td class="p-3.5 font-semibold text-amber-600">${lamaMenunggak}</td>
+          <td class="p-3.5"><span class="bg-rose-100 text-rose-700 px-2 py-1 rounded text-xs font-semibold">AKTIF</span></td>
+        </tr>
+      `;
+    });
+  } catch (err) {
+    console.error('Error rendering overdue loans:', err);
+    tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-red-400">Gagal memuat data tunggakan.</td></tr>`;
   }
 }
 
@@ -539,6 +645,46 @@ async function renderPayroll() {
   }
 }
 
+async function renderCashFlow() {
+  const tbody = document.getElementById('cashflow-tbody');
+  if (!tbody) return;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/cash-flow`, { headers: getAuthHeaders() });
+    if (!res.ok) return;
+
+    const data = await res.json();
+    tbody.innerHTML = '';
+
+    if (data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400">Belum ada transaksi kas.</td></tr>`;
+        return;
+    }
+
+    data.forEach(c => {
+      const isMasuk = c.tipe === 'MASUK';
+      const tipeHtml = isMasuk 
+        ? `<span class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-semibold">MASUK</span>`
+        : `<span class="bg-rose-100 text-rose-700 px-2 py-1 rounded text-xs font-semibold">KELUAR</span>`;
+        
+      const nominalHtml = isMasuk
+        ? `<span class="text-emerald-600 font-bold">+ ${formatRupiah(c.nominal)}</span>`
+        : `<span class="text-rose-600 font-bold">- ${formatRupiah(c.nominal)}</span>`;
+
+      tbody.innerHTML += `
+        <tr class="border-b border-slate-100 hover:bg-slate-50">
+          <td class="p-3.5">${new Date(c.tanggal).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}</td>
+          <td class="p-3.5">${c.keterangan}</td>
+          <td class="p-3.5">${tipeHtml}</td>
+          <td class="p-3.5">${nominalHtml}</td>
+        </tr>
+      `;
+    });
+  } catch (err) {
+    console.error('Error rendering cash flow:', err);
+  }
+}
+
 function showSlipDetail(periode, nama, gajiPokok, potWajib, potCicilan, gajiBersih) {
     Swal.fire({
         title: `Slip Gaji - ${periode}`,
@@ -579,12 +725,14 @@ async function renderAll() {
       renderDashboard(),
       renderSavings(),
       renderLoans(),
-      renderPayroll()
+      renderPayroll(),
+       renderCashFlow()
     ]);
     
     // 1. Tabel Persetujuan Pinjaman (Hanya untuk Pengurus)
     if (isChairmanOnly()) {
       await loadPendingLoans();
+       await renderOverdueLoans();
     }
 
     // 2. Tabel Persetujuan Pencairan Simpanan (Untuk Admin/Bendahara/Pengurus)
@@ -980,9 +1128,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    if (typeof loadPendingLoans === 'function') {
-        loadPendingLoans();
-    }
+    // loadPendingLoans() sudah dipanggil di dalam renderAll()
+    // jadi tidak perlu dipanggil lagi di sini.
+
     if (typeof loadPendingWithdrawals === 'function') {
         loadPendingWithdrawals();
     }
@@ -1326,10 +1474,193 @@ document.addEventListener('click', function(event) {
     }
 });
 
+// === FUNGSI KHUSUS ADMIN ===
+
+async function resetPassword(userId, userName) {
+    const confirm = await Swal.fire({
+        title: 'Reset Password?',
+        text: `Password ${userName} akan direset menjadi "koperasi123". Lanjutkan?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#F59E0B',
+        cancelButtonColor: '#4b5563',
+        confirmButtonText: 'Ya, Reset',
+        cancelButtonText: 'Batal'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/users/${userId}/reset-password`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const result = await res.json();
+
+        if (res.ok) {
+            Swal.fire('Berhasil!', result.message, 'success');
+        } else {
+            Swal.fire('Gagal', result.message, 'error');
+        }
+    } catch (err) {
+        Swal.fire('Kesalahan', 'Terjadi kesalahan koneksi server', 'error');
+    }
+}
+
+async function toggleAccountStatus(userId, userName, currentUsername) {
+    const isInactive = currentUsername.startsWith('nonaktif_');
+    const actionText = isInactive ? 'Mengaktifkan' : 'Menonaktifkan';
+
+    const confirm = await Swal.fire({
+        title: `${actionText} Akun?`,
+        text: `Apakah Anda yakin ingin ${actionText.toLowerCase()} akun ${userName}?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: isInactive ? '#10B981' : '#EF4444',
+        cancelButtonColor: '#4b5563',
+        confirmButtonText: `Ya, ${actionText}`,
+        cancelButtonText: 'Batal'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+        const res = await fetch(`${API_BASE_URL}/users/${userId}/toggle-status`, {
+            method: 'POST',
+            headers: getAuthHeaders()
+        });
+        const result = await res.json();
+
+        if (res.ok) {
+            Swal.fire('Berhasil!', result.message, 'success');
+            renderAll(); // Refresh tabel
+        } else {
+            Swal.fire('Gagal', result.message, 'error');
+        }
+    } catch (err) {
+        Swal.fire('Kesalahan', 'Terjadi kesalahan koneksi server', 'error');
+    }
+}
+
+// === FUNGSI PENCARIAN (SEARCH) ===
+// === FUNGSI PENCARIAN DENGAN HIGHLIGHT ===
+function highlightText(text, query) {
+    if (!query) return text;
+    // Mencari teks yang cocok (case-insensitive)
+    const regex = new RegExp(`(${query})`, 'gi');
+    // Mengganti dengan tag <mark> berwarna kuning
+    return text.replace(regex, '<mark class="bg-yellow-300 text-slate-900 rounded px-0.5">$1</mark>');
+}
+
+function filterMemberTable() {
+    const input = document.getElementById('search-member').value.toLowerCase();
+    const rows = document.querySelectorAll('#member-table tbody tr');
+    
+    rows.forEach(row => {
+        // Simpan teks asli di atribut data-original agar tidak menumpuk saat di-filter ulang
+        const cells = row.querySelectorAll('td');
+        cells.forEach(cell => {
+            if (!cell.hasAttribute('data-original')) {
+                cell.setAttribute('data-original', cell.innerText);
+            }
+            
+            const originalText = cell.getAttribute('data-original');
+            
+            if (originalText.toLowerCase().includes(input)) {
+                // Jika cocok, tampilkan baris dan beri highlight
+                row.style.display = '';
+                cell.innerHTML = highlightText(originalText, input);
+            } else {
+                // Jika tidak cocok, kembalikan teks asli (tanpa highlight)
+                cell.innerHTML = originalText;
+            }
+        });
+
+        // Sembunyikan baris jika tidak ada satu pun sel yang cocok
+        const rowText = row.innerText.toLowerCase();
+        row.style.display = rowText.includes(input) ? '' : 'none';
+    });
+}
+
+function filterLoanTable() {
+    const input = document.getElementById('search-loan').value.toLowerCase();
+    const rows = document.querySelectorAll('#loan-table tbody tr');
+    
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        cells.forEach(cell => {
+            if (!cell.hasAttribute('data-original')) {
+                cell.setAttribute('data-original', cell.innerText);
+            }
+            
+            const originalText = cell.getAttribute('data-original');
+            
+            if (originalText.toLowerCase().includes(input)) {
+                row.style.display = '';
+                cell.innerHTML = highlightText(originalText, input);
+            } else {
+                cell.innerHTML = originalText;
+            }
+        });
+
+        const rowText = row.innerText.toLowerCase();
+        row.style.display = rowText.includes(input) ? '' : 'none';
+    });
+}
+
+// === FUNGSI EKSPOR EXCEL ===
+function exportToExcel(tableId, fileName) {
+    const table = document.getElementById(tableId);
+    if (!table) {
+        Swal.fire('Error', 'Tabel tidak ditemukan!', 'error');
+        return;
+    }
+
+    // Konversi tabel HTML ke Workbook Excel
+    const wb = XLSX.utils.table_to_book(table, { sheet: "Data" });
+    
+    // Simpan sebagai file .xlsx
+    XLSX.writeFile(wb, `${fileName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+const formAddCash = document.getElementById('form-add-cash');
+if (formAddCash) {
+  formAddCash.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    if (!isTreasurerOnly()) return alert('Akses ditolak. Hanya Bendahara yang dapat mencatat kas.');
+
+    const keterangan = document.getElementById('cash-desc').value.trim();
+    const tipe = document.getElementById('cash-type').value;
+    const nominal = Number(document.getElementById('cash-amount').value);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/cash-flow`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ keterangan, tipe, nominal })
+      });
+
+      if (res.ok) {
+        Swal.fire('Berhasil!', 'Transaksi kas berhasil dicatat.', 'success');
+        document.getElementById('cash-desc').value = '';
+        document.getElementById('cash-amount').value = '';
+        await renderCashFlow();
+      } else {
+        const errData = await res.json();
+        Swal.fire('Gagal', errData.message || 'Gagal mencatat kas', 'error');
+      }
+    } catch (err) {
+      Swal.fire('Kesalahan', 'Terjadi kesalahan koneksi server', 'error');
+    }
+  });
+}
+
 // Expose Fungsi
 window.handleLoanAction = handleLoanAction;
 window.calculateLoanPreview = calculateLoanPreview;
 window.showUserProfile = showUserProfile;
+window.resetPassword = resetPassword;
+window.toggleAccountStatus = toggleAccountStatus;
 window.handleLogout = handleLogout;
 window.processPayrollDeduction = processPayrollDeduction;
 window.showSlipDetail = showSlipDetail;
