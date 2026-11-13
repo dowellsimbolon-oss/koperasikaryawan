@@ -288,8 +288,8 @@ app.post(['/savings', '/api/savings'], authenticateToken, authorizeTreasurer, as
 
         // Catat ke Buku Kas
         await db.query(
-            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
-            [`Setoran Simpanan ${type} - ${mId}`, 'MASUK', numAmount]
+            'INSERT INTO cash_flow (keterangan, tipe, kategori, nominal) VALUES (?, ?, ?, ?)',
+            [`Setoran Simpanan ${type} - ${mId}`, 'MASUK', 'Simpanan', numAmount]
         );
 
         res.status(201).json({
@@ -419,8 +419,8 @@ app.post(['/savings/withdraw/:id/approve', '/api/savings/withdraw/:id/approve'],
 
         // Catat ke Buku Kas
         await connection.query(
-            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
-            [`Pencairan Simpanan - ${wd.member_id}`, 'KELUAR', wd.jumlah]
+            'INSERT INTO cash_flow (keterangan, tipe, kategori, nominal) VALUES (?, ?, ?, ?)',
+            [`Pencairan Simpanan - ${wd.member_id}`, 'KELUAR', 'Simpanan', wd.jumlah]
         );
 
         await connection.commit();
@@ -537,10 +537,10 @@ app.get(['/loans/pending', '/api/loans/pending'], authenticateToken, async (req,
   }
 });
 
-// Endpoint Approve Pinjaman
-app.post(['/loans/approve', '/api/loans/approve'], authenticateToken, authorizeChairman, async (req, res) => {
+// Endpoint Approve Pinjaman (PERBAIKAN: Rute menggunakan /:id dan ambil dari req.params)
+app.post(['/loans/:id/approve', '/api/loans/:id/approve'], authenticateToken, authorizeChairman, async (req, res) => {
     try {
-        const loanId = req.body.id || req.body.loanId || req.body.loan_id;
+        const loanId = req.params.id; // Mengambil dari URL
         if (!loanId) {
             return res.status(400).json({ success: false, message: 'ID Pinjaman tidak disertakan!' });
         }
@@ -583,8 +583,8 @@ app.post(['/loans/:id/disburse', '/api/loans/:id/disburse'], authenticateToken, 
 
         // Catat ke Buku Kas
         await db.query(
-            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
-            [`Pencairan Pinjaman - ${loanId}`, 'KELUAR', loans[0].amount]
+            'INSERT INTO cash_flow (keterangan, tipe, kategori, nominal) VALUES (?, ?, ?, ?)',
+            [`Pencairan Pinjaman - ${loanId}`, 'KELUAR', 'Pinjaman', loans[0].amount]
         );
 
         res.json({ success: true, message: 'Dana pinjaman berhasil dicairkan!' });
@@ -593,9 +593,10 @@ app.post(['/loans/:id/disburse', '/api/loans/:id/disburse'], authenticateToken, 
     }
 });
 
-app.post(['/loans/reject', '/api/loans/reject'], authenticateToken, authorizeChairman, async (req, res) => {
+// Endpoint Reject Pinjaman (PERBAIKAN: Rute menggunakan /:id dan ambil dari req.params)
+app.post(['/loans/:id/reject', '/api/loans/:id/reject'], authenticateToken, authorizeChairman, async (req, res) => {
     try {
-        const loanId = req.body.id || req.body.loanId || req.body.loan_id;
+        const loanId = req.params.id; // Mengambil dari URL
         if (!loanId) return res.status(400).json({ success: false, message: 'ID Pinjaman tidak disertakan!' });
         
         const [result] = await db.query(`UPDATE loans SET status = 'REJECTED', remaining_amount = 0 WHERE id = ?`, [loanId]);
@@ -646,8 +647,8 @@ app.post(['/loans/:id/approve-payoff', '/api/loans/:id/approve-payoff'], authent
 
         // Catat ke Buku Kas
         await db.query(
-            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
-            [`Pelunasan Pinjaman - ${loanId}`, 'MASUK', loans[0].remaining_amount]
+            'INSERT INTO cash_flow (keterangan, tipe, kategori, nominal) VALUES (?, ?, ?, ?)',
+            [`Pelunasan Pinjaman - ${loanId}`, 'MASUK', 'Pinjaman', loans[0].remaining_amount]
         );
 
         res.json({ success: true, message: 'Pembayaran diterima. Pinjaman telah lunas!' });
@@ -678,10 +679,12 @@ app.get(['/payrolls', '/api/payrolls', '/payroll-deductions', '/api/payroll-dedu
   }
 });
 
+// PERBAIKAN: Menambahkan '/payroll/process' ke dalam array rute
 app.post([
   '/payrolls',
   '/api/payrolls',
   '/payrolls/process',
+  '/payroll/process', // Tambahan agar sinkron dengan app.js
   '/api/payrolls/process',
   '/payroll-deductions',
   '/api/payroll-deductions'
@@ -694,7 +697,12 @@ app.post([
       return res.status(400).json({ success: false, message: 'Periode pemotongan wajib diisi!' });
     }
 
-    const [members] = await db.query('SELECT id, gaji_pokok, simpanan_wajib FROM members');
+    // PERBAIKAN: Mengambil simpanan_wajib dari tabel savings (bukan dari members)
+    const [members] = await db.query(`
+        SELECT m.id, m.gaji_pokok, COALESCE(s.wajib, 0) AS simpanan_wajib 
+        FROM members m 
+        LEFT JOIN savings s ON m.id = s.member_id
+    `);
 
     for (const member of members) {
       const [loanRows] = await db.query(
@@ -759,18 +767,18 @@ app.get(['/cash-flow', '/api/cash-flow'], authenticateToken, async (req, res) =>
 });
 
 app.post(['/cash-flow', '/api/cash-flow'], authenticateToken, authorizeTreasurer, async (req, res) => {
-    const { keterangan, tipe, nominal } = req.body;
+    const { keterangan, tipe, kategori, nominal } = req.body;
 
     try {
-        if (!keterangan || !tipe || !nominal) {
+        if (!keterangan || !tipe || !kategori || !nominal) {
             return res.status(400).json({ success: false, message: 'Data kas tidak lengkap!' });
         }
 
         const numNominal = Number(nominal);
 
         await db.query(
-            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
-            [keterangan, tipe, numNominal]
+            'INSERT INTO cash_flow (keterangan, tipe, kategori, nominal) VALUES (?, ?, ?, ?)',
+            [keterangan, tipe, kategori, numNominal]
         );
 
         res.status(201).json({ success: true, message: 'Transaksi kas berhasil dicatat!' });
