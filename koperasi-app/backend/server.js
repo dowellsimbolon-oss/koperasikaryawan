@@ -26,7 +26,6 @@ const dbConfig = {
   port: parseInt(process.env.DB_PORT, 10) || 4000,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  // Jika NODE_ENV adalah 'test', gunakan database test
   database: process.env.NODE_ENV === 'test' 
     ? 'db_koperasi_test' 
     : (process.env.DB_NAME || 'db_koperasi'),
@@ -150,7 +149,19 @@ app.get(['/dashboard/summary', '/api/dashboard/summary'], authenticateToken, asy
 // 2. MEMBERS (ANGGOTA)
 app.get(['/members', '/api/members'], authenticateToken, async (req, res) => {
   try {
-    const [members] = await db.query('SELECT id, nik, nama, dept, gaji_pokok AS gajiPokok FROM members');
+    const [members] = await db.query(`
+        SELECT m.id, m.nik, m.nama, m.dept, m.gaji_pokok AS gajiPokok, u.username 
+        FROM members m
+        LEFT JOIN users u ON m.id = u.id
+        ORDER BY 
+            CASE 
+                WHEN u.role LIKE '%Pengurus%' THEN 1
+                WHEN u.role LIKE '%Admin%' THEN 2
+                WHEN u.role LIKE '%Bendahara%' THEN 3
+                ELSE 4
+            END ASC,
+            m.nama ASC
+    `);
     res.json(members);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -160,7 +171,6 @@ app.get(['/members', '/api/members'], authenticateToken, async (req, res) => {
 app.post(['/members', '/api/members'], authenticateToken, authorizeAdmin, async (req, res) => {
     const { nik, nama, dept, gaji_pokok, username, password, role } = req.body;
     
-    // Validasi input wajib
     if (!nik || !nama || !username || !password) {
         return res.status(400).json({ success: false, message: 'NIK, Nama, Username, dan Password wajib diisi!' });
     }
@@ -170,7 +180,6 @@ app.post(['/members', '/api/members'], authenticateToken, authorizeAdmin, async 
     try {
         await connection.beginTransaction();
 
-        // 1. Generate ID Anggota Baru (KOP-XXX)
         const [lastMember] = await connection.query(`
             SELECT id FROM members 
             WHERE id LIKE 'KOP-%' 
@@ -186,23 +195,19 @@ app.post(['/members', '/api/members'], authenticateToken, authorizeAdmin, async 
         }
         const id = `KOP-${String(nextIdNum).padStart(3, '0')}`;
 
-        // 2. Simpan ke tabel members
         await connection.query(
             'INSERT INTO members (id, nik, nama, dept, gaji_pokok) VALUES (?, ?, ?, ?, ?)',
             [id, nik, nama, dept, gaji_pokok]
         );
 
-        // 3. ENKRIPSI PASSWORD MENGGUNAKAN BCRYPT
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // 4. Simpan ke tabel users dengan password yang sudah di-hash
         await connection.query(
             'INSERT INTO users (id, username, password, name, role) VALUES (?, ?, ?, ?, ?)',
             [id, username, hashedPassword, nama, role || 'Karyawan / Anggota']
         );
 
-        // 5. Buat baris awal di tabel savings
         await connection.query(
             'INSERT INTO savings (member_id, pokok, wajib, sukarela) VALUES (?, 0, 0, 0)',
             [id]
@@ -246,7 +251,7 @@ app.get(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
   }
 });
 
-app.post(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
+app.post(['/savings', '/api/savings'], authenticateToken, authorizeTreasurer, async (req, res) => {
     const { memberId, member_id, type, amount } = req.body;
     const mId = memberId || member_id;
 
@@ -281,6 +286,12 @@ app.post(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
             );
         }
 
+        // Catat ke Buku Kas
+        await db.query(
+            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
+            [`Setoran Simpanan ${type} - ${mId}`, 'MASUK', numAmount]
+        );
+
         res.status(201).json({
             success: true,
             message: `Setoran simpanan ${type} sebesar Rp ${numAmount.toLocaleString('id-ID')} berhasil ditambahkan!`
@@ -291,10 +302,66 @@ app.post(['/savings', '/api/savings'], authenticateToken, async (req, res) => {
 });
 
 // ==========================================
+// FITUR KHUSUS ADMIN
+// ==========================================
+
+app.post(['/users/:id/reset-password', '/api/users/:id/reset-password'], authenticateToken, authorizeAdmin, async (req, res) => {
+    const targetUserId = req.params.id;
+    const tempPassword = 'koperasi123';
+
+    try {
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(tempPassword, salt);
+
+        const [result] = await db.query(
+            'UPDATE users SET password = ? WHERE id = ?',
+            [hashedPassword, targetUserId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'User tidak ditemukan!' });
+        }
+
+        res.json({ 
+            success: true, 
+            message: `Password berhasil direset menjadi: ${tempPassword}. Mohon beritahu karyawan untuk segera menggantinya.` 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Gagal mereset password: ' + error.message });
+    }
+});
+
+app.post(['/users/:id/toggle-status', '/api/users/:id/toggle-status'], authenticateToken, authorizeAdmin, async (req, res) => {
+    const targetUserId = req.params.id;
+
+    try {
+        const [users] = await db.query('SELECT username FROM users WHERE id = ?', [targetUserId]);
+        if (users.length === 0) return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
+
+        const currentUsername = users[0].username;
+        let newUsername;
+        let statusMsg;
+
+        if (currentUsername.startsWith('nonaktif_')) {
+            newUsername = currentUsername.replace('nonaktif_', '');
+            statusMsg = 'Akun berhasil diaktifkan kembali.';
+        } else {
+            newUsername = `nonaktif_${currentUsername}`;
+            statusMsg = 'Akun berhasil dinonaktifkan. Karyawan tidak bisa login.';
+        }
+
+        await db.query('UPDATE users SET username = ? WHERE id = ?', [newUsername, targetUserId]);
+
+        res.json({ success: true, message: statusMsg });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Gagal mengubah status: ' + error.message });
+    }
+});
+
+// ==========================================
 // ENDPOINT PENCAIRAN SIMPANAN SUKARELA
 // ==========================================
 
-// A. Karyawan Mengajukan Pencairan
 app.post(['/savings/withdraw', '/api/savings/withdraw'], authenticateToken, async (req, res) => {
     const { amount } = req.body;
     const memberId = req.user.id;
@@ -331,7 +398,6 @@ app.post(['/savings/withdraw', '/api/savings/withdraw'], authenticateToken, asyn
     }
 });
 
-// B. Bendahara Menyetujui Pencairan
 app.post(['/savings/withdraw/:id/approve', '/api/savings/withdraw/:id/approve'], authenticateToken, async (req, res) => {
     const withdrawalId = req.params.id;
     const connection = await db.getConnection();
@@ -351,6 +417,12 @@ app.post(['/savings/withdraw/:id/approve', '/api/savings/withdraw/:id/approve'],
 
         await connection.query("UPDATE savings_withdrawals SET status = 'APPROVED' WHERE id = ?", [withdrawalId]);
 
+        // Catat ke Buku Kas
+        await connection.query(
+            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
+            [`Pencairan Simpanan - ${wd.member_id}`, 'KELUAR', wd.jumlah]
+        );
+
         await connection.commit();
         res.json({ success: true, message: 'Pencairan disetujui dan saldo telah dipotong!' });
     } catch (error) {
@@ -361,7 +433,6 @@ app.post(['/savings/withdraw/:id/approve', '/api/savings/withdraw/:id/approve'],
     }
 });
 
-// C. Admin Melihat Daftar Pengajuan
 app.get(['/savings/withdrawals/pending', '/api/savings/withdrawals/pending'], authenticateToken, async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -387,7 +458,8 @@ app.get(['/loans', '/api/loans'], authenticateToken, async (req, res) => {
              l.tenor, 
              CAST(l.monthly_installment AS UNSIGNED) AS monthly, 
              CAST(l.remaining_amount AS UNSIGNED) AS remaining, 
-             l.status
+             l.status,
+             l.created_at
       FROM loans l
       JOIN members m ON l.member_id = m.id
       ORDER BY l.created_at DESC
@@ -465,7 +537,7 @@ app.get(['/loans/pending', '/api/loans/pending'], authenticateToken, async (req,
   }
 });
 
-// Endpoint Approve Pinjaman (Mengubah status jadi APPROVED - Siap Cair)
+// Endpoint Approve Pinjaman
 app.post(['/loans/approve', '/api/loans/approve'], authenticateToken, authorizeChairman, async (req, res) => {
     try {
         const loanId = req.body.id || req.body.loanId || req.body.loan_id;
@@ -493,10 +565,12 @@ app.post(['/loans/approve', '/api/loans/approve'], authenticateToken, authorizeC
     }
 });
 
-// Endpoint Disburse Pinjaman (Pencairan Dana oleh Bendahara)
+// Endpoint Disburse Pinjaman
 app.post(['/loans/:id/disburse', '/api/loans/:id/disburse'], authenticateToken, authorizeTreasurer, async (req, res) => {
     try {
         const loanId = req.params.id;
+        
+        const [loans] = await db.query('SELECT amount FROM loans WHERE id = ?', [loanId]);
         
         const [result] = await db.query(
             "UPDATE loans SET status = 'DISBURSED' WHERE id = ? AND status = 'APPROVED'",
@@ -506,6 +580,12 @@ app.post(['/loans/:id/disburse', '/api/loans/:id/disburse'], authenticateToken, 
         if (result.affectedRows === 0) {
             return res.status(400).json({ success: false, message: 'Pinjaman belum disetujui atau sudah dicairkan.' });
         }
+
+        // Catat ke Buku Kas
+        await db.query(
+            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
+            [`Pencairan Pinjaman - ${loanId}`, 'KELUAR', loans[0].amount]
+        );
 
         res.json({ success: true, message: 'Dana pinjaman berhasil dicairkan!' });
     } catch (error) {
@@ -527,7 +607,7 @@ app.post(['/loans/reject', '/api/loans/reject'], authenticateToken, authorizeCha
     }
 });
 
-// Endpoint Ajukan Pelunasan (Karyawan)
+// Endpoint Ajukan Pelunasan
 app.post(['/loans/:id/request-payoff', '/api/loans/:id/request-payoff'], authenticateToken, async (req, res) => {
     try {
         const loanId = req.params.id;
@@ -548,10 +628,12 @@ app.post(['/loans/:id/request-payoff', '/api/loans/:id/request-payoff'], authent
     }
 });
 
-// Endpoint Setujui Pelunasan (Bendahara)
+// Endpoint Setujui Pelunasan
 app.post(['/loans/:id/approve-payoff', '/api/loans/:id/approve-payoff'], authenticateToken, async (req, res) => {
     try {
         const loanId = req.params.id;
+        
+        const [loans] = await db.query('SELECT remaining_amount FROM loans WHERE id = ?', [loanId]);
         
         const [result] = await db.query(
             "UPDATE loans SET remaining_amount = 0, status = 'LUNAS' WHERE id = ?",
@@ -562,13 +644,19 @@ app.post(['/loans/:id/approve-payoff', '/api/loans/:id/approve-payoff'], authent
             return res.status(404).json({ success: false, message: 'Data pinjaman tidak ditemukan!' });
         }
 
+        // Catat ke Buku Kas
+        await db.query(
+            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
+            [`Pelunasan Pinjaman - ${loanId}`, 'MASUK', loans[0].remaining_amount]
+        );
+
         res.json({ success: true, message: 'Pembayaran diterima. Pinjaman telah lunas!' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Gagal memproses pelunasan: ' + error.message });
     }
 });
 
-// 5. PAYROLL DEDUCTION (POTONGAN GAJI)
+// 5. PAYROLL DEDUCTION
 app.get(['/payrolls', '/api/payrolls', '/payroll-deductions', '/api/payroll-deductions', '/payroll'], authenticateToken, async (req, res) => {
   try {
     const [rows] = await db.query(`
@@ -609,7 +697,6 @@ app.post([
     const [members] = await db.query('SELECT id, gaji_pokok, simpanan_wajib FROM members');
 
     for (const member of members) {
-      // Cek pinjaman aktif (status APPROVED atau DISBURSED)
       const [loanRows] = await db.query(
         "SELECT SUM(monthly_installment) as total_cicilan FROM loans WHERE member_id = ? AND status IN ('APPROVED', 'DISBURSED')",
         [member.id]
@@ -633,7 +720,6 @@ app.post([
         [payrollId, member.id, periode, gajiPokok, potWajib, potCicilan, totalPotongan, gajiBersih]
       );
 
-      // Kurangi sisa pinjaman jika ada cicilan
       if (potCicilan > 0) {
           const [activeLoans] = await db.query(
               "SELECT id, remaining_amount FROM loans WHERE member_id = ? AND status IN ('APPROVED', 'DISBURSED') AND remaining_amount > 0",
@@ -659,6 +745,40 @@ app.post([
   }
 });
 
+// ==========================================
+// ENDPOINT BUKU KAS
+// ==========================================
+
+app.get(['/cash-flow', '/api/cash-flow'], authenticateToken, async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT * FROM cash_flow ORDER BY tanggal DESC');
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post(['/cash-flow', '/api/cash-flow'], authenticateToken, authorizeTreasurer, async (req, res) => {
+    const { keterangan, tipe, nominal } = req.body;
+
+    try {
+        if (!keterangan || !tipe || !nominal) {
+            return res.status(400).json({ success: false, message: 'Data kas tidak lengkap!' });
+        }
+
+        const numNominal = Number(nominal);
+
+        await db.query(
+            'INSERT INTO cash_flow (keterangan, tipe, nominal) VALUES (?, ?, ?)',
+            [keterangan, tipe, numNominal]
+        );
+
+        res.status(201).json({ success: true, message: 'Transaksi kas berhasil dicatat!' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Gagal mencatat kas: ' + error.message });
+    }
+});
+
 // ================= API UBAH PROFIL USER =================
 app.put(['/users/profile', '/api/users/profile'], authenticateToken, async (req, res) => {
     const { oldPassword, newUsername, newPassword } = req.body;
@@ -672,7 +792,6 @@ app.put(['/users/profile', '/api/users/profile'], authenticateToken, async (req,
 
         const user = users[0];
         
-        // 1. Cek password lama (mendukung password lama yang belum ter-hash)
         let isOldPassValid = false;
         if (user.password && (user.password.startsWith('$2b$') || user.password.startsWith('$2a$'))) {
             isOldPassValid = await bcrypt.compare(oldPassword, user.password);
@@ -695,13 +814,11 @@ app.put(['/users/profile', '/api/users/profile'], authenticateToken, async (req,
         }
         
         if (newPassword && newPassword.trim() !== '') {
-            
-            // 2. ENKRIPSI PASSWORD BARU MENGGUNAKAN BCRYPT
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(newPassword.trim(), salt);
             
             updateQuery += 'password = ?, ';
-            params.push(hashedPassword); // Masukkan password yang sudah di-hash
+            params.push(hashedPassword);
             hasChange = true;
         }
 
