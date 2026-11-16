@@ -1,7 +1,7 @@
 /// --- KONFIGURASI API BACKEND ---
 const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ? 'http://127.0.0.1:5000' 
-    : 'https://koperasikaryawan-amos.vercel.app'; 
+    : 'https://koperasikaryawan-9y7j.vercel.app'; 
 
 // --- UTILS FORMATTER & HEADERS ---
 function formatRupiah(num) {
