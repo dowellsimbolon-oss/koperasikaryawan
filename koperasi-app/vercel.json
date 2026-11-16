@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/koperasi-app/server.js"
+      "destination": "/api/server.js"
     }
   ]
 }
